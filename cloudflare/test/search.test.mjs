@@ -298,3 +298,28 @@ test("a collector reads only its own origin while a reader reads every origin", 
   const other = await get(env, "/api/v1/memories/origin-b/experience/1", collector());
   assert.equal(other.status, 403);
 });
+
+
+test("reader pagination and source counts distinguish identical records from different origins", async (t) => {
+  const { env } = await runtime(t);
+  for (const [origin, client, sources] of [
+    [ORIGIN, COLLECTOR, [source("codex:first@origin-a")]],
+    [OTHER_ORIGIN, OTHER_COLLECTOR, [source("codex:second@origin-b"), source("codex:third@origin-b")]],
+  ]) {
+    const response = await worker.fetch(request("/api/v1/sync/learning/deltas", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ protocol: 1, origin, base_revision: 0, digest: digest(origin),
+        changes: [experience(1, { observed_at: 1000, sources })] }),
+    }), env, collector(client));
+    assert.equal(response.status, 200, await response.text());
+  }
+  const all = await (await get(env, "/api/v1/memories?limit=20", reader())).json();
+  assert.deepEqual(all.memories.sort((a, b) => a.origin.localeCompare(b.origin))
+    .map((row) => [row.origin, row.source_count]), [[ORIGIN, 1], [OTHER_ORIGIN, 2]]);
+  const first = await (await get(env, "/api/v1/memories?limit=1", reader())).json();
+  assert.ok(first.next_cursor);
+  const second = await (await get(env, "/api/v1/memories?limit=1&after=" + encodeURIComponent(first.next_cursor), reader())).json();
+  const rows = [...first.memories, ...second.memories].sort((a, b) => a.origin.localeCompare(b.origin));
+  assert.deepEqual(rows.map((row) => [row.origin, row.source_count]), [[ORIGIN, 1], [OTHER_ORIGIN, 2]]);
+  assert.equal(second.next_cursor, null);
+});

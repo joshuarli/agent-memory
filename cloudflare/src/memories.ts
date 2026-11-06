@@ -27,6 +27,7 @@ export type StateFilter =
 
 export interface SearchCursor {
   readonly sortAt: number;
+  readonly origin: string | null;
   readonly record: "experience" | "memory";
   readonly id: number;
 }
@@ -128,15 +129,16 @@ export function ftsExpression(value: string): string | null {
 
 function decodeSearchCursor(value: string): SearchCursor | null {
   const parts = decodeCursor(value);
-  if (parts === null || parts.length !== 3) return null;
-  const [time, record, id] = parts;
+  if (parts === null || (parts.length !== 3 && parts.length !== 4)) return null;
+  const [time, record, id, origin] = parts;
+  if (origin !== undefined && !ORIGIN.test(origin)) return null;
   if (time === undefined || record === undefined || id === undefined) return null;
   if (!CURSOR_NUMBER.test(time) || !CURSOR_ID.test(id)) return null;
   if (record !== "experience" && record !== "memory") return null;
   const sortAt = Number(time);
   const identifier = Number(id);
   if (!Number.isFinite(sortAt) || !Number.isSafeInteger(identifier)) return null;
-  return { sortAt, record, id: identifier };
+  return { sortAt, record, id: identifier, origin: origin ?? null };
 }
 
 export function decodeSearchFilters(url: URL): MemoryFilters | null {
@@ -226,8 +228,13 @@ function branch(record: "experience" | "memory", filters: MemoryFilters): {
   }
   if (filters.after !== null) {
     if (filters.after.record === record) {
-      conditions.push(`(${alias}.${time}, ${alias}.remote_id) < (?, ?)`);
-      params.push(filters.after.sortAt, filters.after.id);
+      if (filters.after.origin === null) {
+        conditions.push(`(${alias}.${time}, ${alias}.remote_id) < (?, ?)`);
+        params.push(filters.after.sortAt, filters.after.id);
+      } else {
+        conditions.push(`(${alias}.${time}, ${alias}.remote_id, ${alias}.origin_host) < (?, ?, ?)`);
+        params.push(filters.after.sortAt, filters.after.id, filters.after.origin);
+      }
     } else if (filters.after.record === "memory" && record === "experience") {
       conditions.push(`${alias}.${time} <= ?`);
       params.push(filters.after.sortAt);
@@ -252,7 +259,7 @@ function branch(record: "experience" | "memory", filters: MemoryFilters): {
      FROM ${table} ${alias}
      JOIN learning_state ls ON ls.origin_host = ${alias}.origin_host AND ls.epoch = ${alias}.epoch${matches}
      WHERE 1 = 1${where}
-     ORDER BY ${alias}.${time} DESC, ${alias}.remote_id DESC
+     ORDER BY ${alias}.${time} DESC, ${alias}.remote_id DESC, ${alias}.origin_host DESC
      LIMIT ?`;
   params.push(filters.limit + 1);
   return { sql, params };
@@ -287,7 +294,7 @@ export function searchStatement(filters: MemoryFilters): {
 `;
   return {
     sql: `${matches}SELECT * FROM (${body})
-          ORDER BY sort_at DESC, record DESC, id DESC LIMIT ?`,
+          ORDER BY sort_at DESC, record DESC, id DESC, origin DESC LIMIT ?`,
     params,
   };
 }
@@ -316,14 +323,14 @@ async function pageSources(
     const params: (string | number)[] = [];
     for (const row of chunk) params.push(row.origin, row.record, row.id);
     const result = await db.prepare(
-      `SELECT s.record, s.remote_id, s.session, s.position, s.digest, s.role
+      `SELECT s.origin_host, s.record, s.remote_id, s.session, s.position, s.digest, s.role
        FROM learning_source s
        JOIN learning_state ls ON ls.origin_host = s.origin_host AND ls.epoch = s.epoch
        WHERE (s.origin_host, s.record, s.remote_id) IN (${chunk.map(() => "(?, ?, ?)").join(",")})
        ORDER BY s.record, s.remote_id, s.session, s.position, s.role`,
-    ).bind(...params).all<LearningSourceRow>();
+    ).bind(...params).all<LearningSourceRow & { readonly origin_host: string }>();
     for (const source of result.results) {
-      const key = `${source.record}:${source.remote_id}`;
+      const key = `${source.origin_host}:${source.record}:${source.remote_id}`;
       const list = provided.get(key) ?? [];
       list.push(source);
       provided.set(key, list);
@@ -340,10 +347,10 @@ export async function searchMemories(
   const rows = (await db.prepare(statement.sql).bind(...statement.params).all<SearchRow>()).results;
   const page = rows.slice(0, filters.limit);
   const sources = await pageSources(db, page);
-  const memories = page.map((row) => result(row, sources.get(`${row.record}:${row.id}`)?.length ?? 0));
+  const memories = page.map((row) => result(row, sources.get(`${row.origin}:${row.record}:${row.id}`)?.length ?? 0));
   const last = page.at(-1);
   const next_cursor = rows.length > filters.limit && last !== undefined
-    ? encodeCursor([String(last.sort_at), last.record, String(last.id)])
+    ? encodeCursor([String(last.sort_at), last.record, String(last.id), last.origin])
     : null;
   return { memories, next_cursor };
 }
