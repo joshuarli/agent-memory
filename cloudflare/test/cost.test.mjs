@@ -184,7 +184,7 @@ test("a duplicate generation commit writes zero rows", async (t) => {
   assert.equal(first.response.status, 200, JSON.stringify(first.body));
   counter.writes.length = 0;
   await storeObject(env, Buffer.from("upload budget"));
-  assert.equal(counter.rows(), 5);
+  assert.equal(counter.rows(), 4);
   counter.writes.length = 0;
   const hello = await worker.fetch(request("/api/v1/sync/hello", {
     method: "POST",
@@ -225,7 +225,7 @@ test("a generation commit writes generation_object rows only for new objects", a
   assert.equal(third.response.status, 200, JSON.stringify(third.body));
   const unchanged = await db.prepare("SELECT count(*) AS count FROM generation_object").first();
   assert.equal(unchanged.count, 41);
-  assert.equal(counter.rows(), 11);
+  assert.equal(counter.rows(), 10);
 });
 
 test("a second generation with 10x retained objects stays under 1.5x", async (t) => {
@@ -245,7 +245,7 @@ test("a second generation with 10x retained objects stays under 1.5x", async (t)
   const small = await measure(10, 0);
   const large = await measure(100, small.revision);
   assert.ok(large.rows < small.rows * 1.5, `10x retained wrote ${large.rows} versus ${small.rows}`);
-  assert.equal(large.rows, 11);
+  assert.equal(large.rows, 10);
 });
 
 test("a snapshot commit writes rows in proportion to chunks and pending objects", async (t) => {
@@ -294,7 +294,7 @@ test("the schema guard pins every table's index set", async (t) => {
       "learning_memory_state_created",
     ],
     learning_source: ["learning_source_record", "learning_source_session"],
-    remote_object: ["remote_object_ciphertext", "remote_object_gc"],
+    remote_object: ["remote_object_ciphertext"],
     snapshot: ["snapshot_origin_created", "snapshot_origin_revision"],
     snapshot_chunk: ["snapshot_chunk_ciphertext", "snapshot_chunk_plaintext"],
     tombstone: ["tombstone_origin_revision", "tombstone_origin_session"],

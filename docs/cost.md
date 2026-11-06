@@ -162,3 +162,14 @@ per million: $3.9006 and $0.0695, or **$3.9705** for the month before any plan
 allowance. The initial backfill and the hourly generations dominate the write
 line; the restore dominates Class B reads. The projection is an estimate that
 replays one day's pattern over 30 days and keeps the one-time operations once.
+
+The 2026-11-06 S12 follow-up drops the write-side `remote_object_gc` index
+(migration 0010). That index only served the GC mark's pending-object scan.
+Removing it makes that scan read the table and removes one index write from
+every `remote_object` insert and update. The same 80,000-object workload measured
+the hourly incremental operation at 4,512 rows written before and 3,984 after
+(-11.7%); the initial backfill fell from 645,607 to 565,206 (-12.4%). The 30-day
+projection falls from $3.9705 to $3.5300. Rows read rise because the GC scan is
+now a table scan, but at $0.001 per million the read change stays below a cent.
+The production `statsctl` verification of this policy waits on the 24-hour
+window after the S11 deploy and on the deployed Worker.

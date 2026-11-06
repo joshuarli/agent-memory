@@ -15,7 +15,7 @@ const INDEXES = [
   "generation_origin_revision", "learning_experience_kind", "learning_experience_observed",
   "learning_experience_origin", "learning_experience_project", "learning_experience_state_observed",
   "learning_memory_created", "learning_memory_origin", "learning_memory_project", "learning_memory_state_created",
-  "learning_source_record", "learning_source_session", "remote_object_ciphertext", "remote_object_gc",
+  "learning_source_record", "learning_source_session", "remote_object_ciphertext",
   "snapshot_chunk_ciphertext", "snapshot_chunk_plaintext", "snapshot_origin_created", "snapshot_origin_revision",
   "tombstone_origin_revision", "tombstone_origin_session",
 ];
