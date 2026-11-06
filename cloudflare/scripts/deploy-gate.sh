@@ -14,8 +14,8 @@ cf=${CF_BIN:-cf}
 command -v "$cf" >/dev/null 2>&1 || fail 'cf is not installed'
 command -v node >/dev/null 2>&1 || fail 'node is not installed'
 command -v jaq >/dev/null 2>&1 || fail 'jaq is not installed'
-command -v rg >/dev/null 2>&1 || fail 'rg is not installed'
 
+node scripts/config.mjs check >/dev/null || fail 'cloudflare.config.ts failed the parsed config check'
 "$cf" auth whoami >/dev/null 2>&1 || fail 'cf is not authenticated; run cf auth login'
 
 [ -f cloudflare.config.ts ] || fail 'cloudflare.config.ts is missing; restore it from git'
@@ -30,22 +30,5 @@ if [ -n "$names" ]; then
 	done
 	fail 'apply pending migrations with make migrate before deploying'
 fi
-
-check () {
-	if ! rg -q --fixed-strings "$1" cloudflare.config.ts; then
-		fail "cloudflare.config.ts lacks $2"
-	fi
-}
-
-check 'name: "usr-memories"' 'the worker name'
-check 'memories.17166969.xyz' 'the custom domain'
-check 'ACCESS_TEAM_DOMAIN: bindings.text' 'the Access team domain'
-check 'ACCESS_AUD: bindings.text' 'the Access audience'
-check 'DB: bindings.d1' 'the D1 binding'
-check 'BUCKET: bindings.r2' 'the R2 binding'
-check 'headSamplingRate: 0.25' 'logs at 0.25'
-check 'headSamplingRate: 0.1' 'traces at 0.10'
-check 'workersDev: false' 'workersDev=false'
-check 'previewUrls: false' 'previewUrls=false'
 
 printf 'deploy-gate: ok\n'

@@ -118,8 +118,47 @@ and new sessions stay local-only. To resume, run
 
 ## Watching it
 
+Deploy `stats-observe` before the Worker that emits new operation names (see
+[operations](operations.md)). The deployed collector validates every
+`stats.observe` operation message against `MEMORIES_OPERATIONS`; a name it does
+not know, a malformed row account, or a second operation message for one
+invocation drops that invocation in stats.
+
 The `stats` project page for `usr-memories` prices D1 rows written per
 statement in its cost ledger, and its D1 widget charts rows written per bucket.
 `INSERT INTO snapshot_chunk` should cost a few hundred rows a day, at most one
 snapshot's chunks. If it dominates the ledger, snapshots are being committed more
 often than once a day.
+
+The Worker emits one operation message per instrumented route with the D1 rows
+and statement count that request produced. The local contract test asserts the
+message names equal the collector's accepted set and that its rows equal the D1
+`meta` totals. Rows from a rolled-back batch are still billed by D1 even though
+the local `meta.rows_written` only sees the statements that ran.
+
+The fast guard is `make cost-check`: it pins `meta.rows_written` for an object
+upload (5), a duplicate generation commit (0), a generation commit that adds no
+objects (11), and a snapshot commit (11), and it pins the schema's index set.
+The 80,000-object workload is `make perf-cost`; it writes
+`.work/perf/cost.json` and `.work/perf/cost.md` with a labeled 30-day projection
+priced from `~/d/stats/cloudflare/src/cost/pricing.ts`.
+
+The 2026-11-06 measurement, at 80,000 objects:
+
+| Operation | Rows written | Rows read | R2 Class A | R2 Class B | Duration |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Initial backfill | 645,607 | 724,999 | 80,441 | 0 | 178 s |
+| 24 hourly incremental syncs | 4,512 | 44,712 | 731 | 0 | 111 s |
+| Daily snapshot | 212 | 725,161 | 32 | 9 | 4.8 s |
+| GC mark | 0 | 19,758 | 0 | 9 | 0.1 s |
+| GC sweep | 0 | 4,541 | 0 | 0 | 0.0 s |
+| Tombstone | 17 | 1,025 | 0 | 0 | 0.0 s |
+| Learning delta | 18 | 1,423 | 0 | 0 | 0.0 s |
+| Full restore | 1 | 244,032 | 0 | 80,960 | 232 s |
+| **30-day projection** | **3,900,643** | **69,489,573** | **461,551** | **81,770** | |
+
+The projection prices D1 rows written at $1 per million and rows read at $0.001
+per million: $3.9006 and $0.0695, or **$3.9705** for the month before any plan
+allowance. The initial backfill and the hourly generations dominate the write
+line; the restore dominates Class B reads. The projection is an estimate that
+replays one day's pattern over 30 days and keeps the one-time operations once.

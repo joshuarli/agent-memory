@@ -15,6 +15,11 @@ Local agent session memory (`src/agent_memory`) and its Cloudflare Worker (`clou
 
 | Change | Command |
 | --- | --- |
+| Any Worker or local-stack change | `make check` (the predeploy gate; no `cf` login) |
+| Local stack or Access edge | `make worker-test`, `make integration-local`, `make lint` |
+| Persistent dev mode | `make dev-local`, then `make reset-local` |
+| Deploy configuration | `make config-check`, `make check` |
+| Cost budgets | `make cost-check`; `make perf-cost` for the full workload |
 | Any Python | `make test-python` (every `tests/test_*.py` and `eval/test_*.py`) and `make lint` |
 | One suite | `TMPDIR="$PWD/.work/tmp" uv run --no-project --python '>=3.15' python -I tests/test_NAME.py` |
 | Worker source, tests, or config | `make worker-deps` once, then `make worker-test`, `make lint`, and `make worker-check` |

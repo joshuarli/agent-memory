@@ -1,6 +1,6 @@
 # Agent learning
 
-The package provides three commands, `agent-learn`, `agent-sessions`, and `agent-sessions-serve`, and needs Python 3.15 or newer with no runtime dependencies. [Install](docs/install.md) covers environments and launchers, [operations](docs/operations.md) covers the Cloudflare Worker, and [cost](docs/cost.md) covers what the Worker spends. Repository checks are in [AGENTS.md](AGENTS.md).
+The package provides three commands, `agent-learn`, `agent-sessions`, and `agent-sessions-serve`, and needs Python 3.15 or newer with no runtime dependencies. [Install](docs/install.md) covers environments and launchers, [operations](docs/operations.md) covers the Cloudflare Worker, [local](docs/local.md) covers the workerd stack and its Access edge, and [cost](docs/cost.md) covers what the Worker spends. Repository checks are in [AGENTS.md](AGENTS.md); `make check` is the predeploy gate, and `make deploy` deploys only the bundle that gate checked.
 
 `agent-learn` keeps one local state directory at `~/.agent-sessions`, holding `sessions.sqlite3`, the archive, and an optional `config.json`. `AGENT_SESSIONS_STATE_DIR` overrides it and `--state-dir` overrides both. It holds three levels of knowledge, each with its own trust and cost boundary:
 
@@ -125,7 +125,9 @@ plaintext, compressed, and ciphertext bytes plus CPU per class; set `AGE_BIN` wh
 not on `PATH`. Ciphertext bytes live in the sample's `timings` because randomized age
 ciphertext length can vary by a few bytes, so they are measured, not used as a deterministic
 gate. `perf-worker` boots the built bundle with real Miniflare D1 and R2 and measures it over
-loopback HTTP; build it once with `make worker-deps worker-bundle`. `perf-deployed` probes the production origin with
+loopback HTTP; build it once with `make worker-deps worker-bundle`. `make perf-cost` drives an
+80,000-object mirror through the same stack and writes a 30-day D1/R2 projection under
+`.work/perf/`. `perf-deployed` probes the production origin with
 the service token and records an observational run: it checks that an unauthenticated
 request is refused, reuses one keep-alive TLS connection after a warmup, and records wall
 time, client process CPU, response bytes, result counts, reconnects, and the Worker's

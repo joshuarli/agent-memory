@@ -20,12 +20,17 @@ TYPED_PYTHON := src/agent_memory eval/bench_mirror.py tests/testkit.py
 GIT_TEMPLATE_DIR ?= $(wildcard /opt/homebrew/share/git-core/templates)
 ENV_GIT := $(if $(GIT_TEMPLATE_DIR),GIT_TEMPLATE_DIR=$(GIT_TEMPLATE_DIR))
 
-.PHONY: help test test-python lint dist worker-deps worker-bundle worker-test worker-check deploy smoke-deployed migrate-local dev-local reset-local migrations-check migrations-production migrate-production integration-local cost-check perf-cost provision provision-access observe perf-local perf-worker perf-deployed perf-report
+.PHONY: help test test-python lint dist worker-deps worker-bundle worker-test worker-check deploy smoke-deployed migrate-local dev-local reset-local migrations-check migrations-production migrate-production integration-local cost-check check config-check perf-cost provision provision-access observe perf-local perf-worker perf-deployed perf-report
 
 help: ## List targets
 	@awk 'BEGIN {FS = ":.*## "} /^[a-z][a-z0-9.-]*:.*## / {printf "%-22s %s\n", $$1, $$2}' $(MAKEFILE_LIST) | sort
 
 test: test-python worker-test ## Run every Python suite, eval selftest, and Worker suite
+
+check: lint test-python worker-test migrations-check integration-local cost-check config-check ## Run the predeploy gate
+
+config-check: ## Assert the parsed production config
+	node $(WORKER_DIR)/scripts/config.mjs check
 
 test-python: ## Run every Python suite and inference-free eval selftest
 	@mkdir -p .work/tmp
@@ -55,9 +60,9 @@ worker-test: worker-bundle ## Build the bundle and exercise it with every Worker
 worker-check: worker-bundle ## Validate the production deploy plan without uploading
 	cd $(WORKER_DIR) && $(CF) deploy --prebuilt --dry-run --mode production
 
-deploy: ## Gate, build once, test, deploy that exact bundle, and smoke the Worker
+deploy: ## Gate, check, deploy the checked bundle, and smoke the Worker
 	CF_BIN="$(CF)" sh $(WORKER_DIR)/scripts/deploy-gate.sh
-	cd $(WORKER_DIR) && npm run build && npm test
+	$(MAKE) check
 	@set -e; tested=$$(sh $(WORKER_DIR)/scripts/bundle-digest.sh); \
 		printf 'deploy: tested bundle %s\n' "$$tested"; \
 		cd $(WORKER_DIR) && $(CF) deploy --prebuilt --mode production; \
@@ -117,9 +122,7 @@ provision-access: ## Create the Worker-level Access app and a collector token (p
 	sh $(WORKER_DIR)/scripts/provision.sh --access
 
 observe: ## Assert the observability config and name the serving deployment
-	@command -v rg >/dev/null || { >&2 printf 'observe: rg is not installed\n'; exit 1; }
-	@rg -q --fixed-strings 'headSamplingRate: 0.25' $(WORKER_DIR)/cloudflare.config.ts || { >&2 printf 'observe: logs are not at 0.25\n'; exit 1; }
-	@rg -q --fixed-strings 'headSamplingRate: 0.1' $(WORKER_DIR)/cloudflare.config.ts || { >&2 printf 'observe: traces are not at 0.10\n'; exit 1; }
+	@$(MAKE) config-check
 	@printf '%s\n' 'dashboard: https://dash.cloudflare.com/?to=/:account/workers/services/view/usr-memories' 'logs: https://dash.cloudflare.com/?to=/:account/workers/services/view/usr-memories/production/observability'
 	@cd $(WORKER_DIR) && $(CF) workers deployments list --worker usr-memories
 

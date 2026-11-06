@@ -30,6 +30,31 @@ function onlyD1(config) {
   return binding;
 }
 
+function check(config) {
+  const worker = config.worker;
+  const env = worker?.env ?? {};
+  const require = (condition, message) => {
+    if (!condition) fail(message);
+  };
+  require(worker?.name === "usr-memories", "the worker must be usr-memories");
+  require(worker?.domains?.includes("memories.17166969.xyz") === true, "the memories domain is missing");
+  require(env.ACCESS_TEAM_DOMAIN?.type === "text", "ACCESS_TEAM_DOMAIN must be a text binding");
+  require(env.ACCESS_AUD?.type === "text", "ACCESS_AUD must be a text binding");
+  require(env.DB?.type === "d1", "DB must be a D1 binding");
+  require(env.DB?.name === "usr-memories", "DB must bind the usr-memories database");
+  require(env.DB?.id === "9870c4da-3758-4f0c-ab6d-2372eb34009b", "DB has an unexpected database id");
+  require(env.BUCKET?.type === "r2", "BUCKET must be an R2 binding");
+  require(env.BUCKET?.name === "usr-memories", "BUCKET must bind the usr-memories bucket");
+  require(worker?.observability?.logs?.headSamplingRate === 0.25, "logs must sample at 0.25");
+  require(worker?.observability?.traces?.headSamplingRate === 0.1, "traces must sample at 0.10");
+  require(worker?.workersDev === false, "workersDev must be false");
+  require(worker?.previewUrls === false, "previewUrls must be false");
+  require(worker?.exports?.default?.type === "worker", "exports.default must be the worker");
+  require(worker?.exports?.default?.cache?.enabled === false, "the default export cache must be disabled");
+  require(worker?.tailConsumers?.some((item) => item.worker === "stats-observe") === true, "the stats-observe tail is missing");
+  process.stdout.write("config-check: ok\n");
+}
+
 const [command, argument] = process.argv.slice(2);
 
 if (command === "database-id") {
@@ -56,7 +81,9 @@ if (command === "database-id") {
   }
 
   if (onlyD1(await load()).id !== argument) fail("cloudflare.config.ts did not take the new D1 id");
+} else if (command === "check") {
+  check(await load());
 } else {
-  console.error("usage: config.mjs database-id | set-database-id <uuid>");
+  console.error("usage: config.mjs database-id | set-database-id <uuid> | check");
   process.exit(2);
 }

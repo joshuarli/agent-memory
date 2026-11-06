@@ -14,7 +14,11 @@ The `cloudflare/` project is the `usr-memories` Worker that receives the encrypt
 | Compatibility | date `2026-10-30`, `nodejs_compat` |
 | Telemetry | tail consumer `stats-observe` |
 
-`cloudflare/cloudflare.config.ts` is the only configuration. `make deploy` checks the values above against it before it builds anything.
+`cloudflare/cloudflare.config.ts` is the only configuration. `make config-check` asserts the parsed config: the worker name, the memories domain, the Access text bindings, the D1 database id and R2 bucket, the log and trace sampling, `workersDev`/`previewUrls`, the worker export and cache setting, and the `stats-observe` tail. `make check` runs it as part of the predeploy gate, and `make deploy` runs it before any build.
+
+## Deploy order
+
+Deploy `stats-observe` from `~/d/stats` first, with its `make observe-deploy`, then this Worker. The Worker's operation messages are accepted by the deployed `stats-observe`; deploying a Worker that emits a new operation name before the stats policy knows it would reject those invocations. The operation names are frozen after the stats deploy.
 
 ## Commands
 
@@ -22,18 +26,30 @@ Run every command from the repository root. Scripts locate the project from thei
 
 | Effect | Command |
 | --- | --- |
-| Local only | `make test`, `make lint`, `make worker-test`, `make migrate-local`, `make perf-local`, `make perf-worker` |
-| Local, reads the account config | `make worker-check` (a production dry run that uploads nothing) |
+| Predeploy gate | `make check` (no `cf` login or production service needed) |
+| Local only | `make test`, `make lint`, `make worker-test`, `make migrate-local`, `make dev-local`, `make reset-local`, `make integration-local`, `make migrations-check`, `make cost-check`, `make perf-local`, `make perf-worker`, `make perf-cost` |
+| Local, reads the account config | `make worker-check` (a production dry run that uploads nothing), `make config-check` |
 | Remote, read-only | `make migrations-production`, `make observe`, `make smoke-deployed` |
 | Production write | `make deploy`, `make perf-deployed`, `make migrate-production CONFIRM_DATABASE=<id>`, `make provision`, `make provision-access` |
 
+`make check` runs `lint`, every Python suite, the Worker suite, the migration check, the offline integration gate, the cost checks, and `config-check`. It never needs `cf` authentication or a production service.
+
+The local stack, its Access edge, the persistent dev mode, and the offline gate are described in [local](local.md).
+
 Production writes run only when you invoke them. `test`, `sync`, and installation never deploy, migrate, or provision.
 
-`make deploy` runs `cloudflare/scripts/deploy-gate.sh`, which refuses if `cf` is not authenticated, a production migration is pending, or the configuration lost a binding, the domain, or the exposure settings. It then builds the bundle once, runs every Worker suite against it, records its digest, deploys it with `cf deploy --prebuilt --mode production`, and fails if the digest changed in between. It finishes with the read-only smoke probe.
+`make deploy` runs `cloudflare/scripts/deploy-gate.sh`, which refuses if `cf` is not authenticated, a production migration is pending, or the parsed configuration fails. It then runs `make check`, records the checked bundle's digest, deploys that bundle with `cf deploy --prebuilt --mode production`, fails if the digest changed in between, and finishes with the read-only smoke probe.
 
-Apply pending migrations with `make migrate-production` before deploying. It lists the pending migrations and applies them only when `CONFIRM_DATABASE` matches the configured D1 ID. Migrations are numbered SQL files under `cloudflare/migrations/`; never edit or squash an applied one.
+Apply pending migrations with `make migrate-production` before deploying. It lists the pending migrations and applies them only when `CONFIRM_DATABASE` matches the configured D1 ID. Migrations are numbered SQL files under `cloudflare/migrations/`; never edit or squash an applied one. `make migrations-check` rejects a tracked migration that differs from the commit that added it.
 
 `make smoke-deployed` and `make perf-deployed` read the collector service token from `MEMORIES_TOKEN_FILE` (default `.work/secrets/collector.token` in this checkout, mode 0600).
+
+## When a check or deploy fails
+
+- A failing `make check` target fails before anything is built for deploy. Fix the reported target and rerun `make check`; do not bypass it with a direct `cf deploy`.
+- A pending migration from the deploy gate means production is behind the checkout. Run `make migrate-production CONFIRM_DATABASE=<id>` after reading the pending list, then rerun `make deploy`.
+- A bundle digest mismatch means the tested bundle is not the deployed bundle. Do not retry until the tree is clean and the bundle is rebuilt by `make check`; report the mismatch.
+- A failed smoke probe leaves the deployment in place but unverified. Read the Worker logs, check the deployment version, and roll back with `cf` if the failure is not a transient read.
 
 ## Rollback
 
