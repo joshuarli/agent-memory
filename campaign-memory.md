@@ -4,8 +4,8 @@
 
 - **Goal:** Recall reaches agents without them choosing to call it, and recall finds paraphrased experience without an agent-written retry, without losing exact-identifier lookup, correct abstention, or the authority and source-verification guarantees.
 - **Base revision:** `3ba4a00`.
-- **Accepted:** M0 (`83d3745`), M1, M2 (`5430904`), M3 (usr `aba8c54`). **Red:** none. **Parked:** none.
-- **Next slice:** M4.
+- **Accepted:** M0 (`83d3745`), M1 (`d3bb6e9`), M2 (`5430904`), M3 (usr `aba8c54`), M5 (negative result recorded). **Red:** none. **Parked:** M4 on `park/m4-semantic` (`d38d32f`): it missed A1. Retry if a stronger local embedder or a gate chosen on a new tuning split promises at least +15 points of paraphrase Recall@5 on `heldout-2` with no abstention loss.
+- **Next slice:** M6.
 
 ## Charter
 
@@ -22,7 +22,7 @@
 ### Owner (2026-11-06)
 
 1. Order: activation first, then the semantic leg. The semantic leg is measured against hook-mode lexical recall (default, no retry), because a hook cannot write the retry that rescues paraphrases today.
-2. The embedder is a local model behind an external command. No hosted embeddings, no reranker, no new runtime dependency in the package.
+2. The embedder is a local model, reached at a loopback OpenAI-compatible endpoint (`llama-server`) instead of an external command, so a hook does not load a model per prompt. No hosted embeddings, no reranker, no new runtime dependency in the package.
 3. `~/usr` edits are authorized for hook wiring and the `do` recall rule.
 4. The live paid evaluation (`eval/live_recall.py --live`) is out of scope.
 5. Out of scope: a model-based knowledge extraction lane, semantic duplicate adjudication, expiration timestamps, extracted preferences, workspace-shared memory.
@@ -35,8 +35,9 @@
 | P2 | The opportunity replay and as-of filtering live in `eval/`, not in the product. | It is a measurement, not a feature. |
 | P3 | The prompt hook never indexes, never calls a model, and fails open with `{}` under a 2 s deadline. It runs once per session, on the first task prompt, and records the attempt. It injects only non-abstaining results, at most 3 lines and 600 characters, and drops user-turn leads that echo the prompt. It fires only in projects whose experience is captured (observation, a project grant, or the wildcard). | Hooks run on every prompt; the existing abstention gate is the relevance filter. M1 measured opening prompts, so once per session is the measured behavior. No project had observation on; captured experience comes from review grants. |
 | P4 | Injected text goes into the user turn (Claude Code `additionalContext`), never the system prompt. Receipts carry `source: "hook"`. | Keeps the prompt cache intact and makes hook-sourced recall measurable through the existing follow-through. |
-| P5 | Vectors are a derived index: one table keyed by model id and content digest, float32 via `array`, rebuilt by `reindex`, removed on `forget` and tombstone, excluded from backup and mirror. | Rebuildable from canonical records; no new durable contract. |
-| P6 | The semantic leg covers compact records only (approved memories and experiences), not raw session events. It adds candidates through reciprocal rank fusion; the existing relevance gate, authority classification, and source-condition checks decide what is returned. | Exact lookups stay deterministic; semantics only add candidates. |
+| P5 | Vectors are a derived index: one table keyed by model id and content digest, float32 via `array`, rebuilt by `reindex`, removed on `forget` and tombstone, and not mirrored. | Rebuildable from canonical records; no new durable contract. |
+| P6 | The semantic leg adds at most one candidate: the top match across approved memories, experiences, and user turns, passed only when its similarity and its margin over another session's best match clear thresholds chosen on `dev`. Authority classification and source-condition checks are unchanged. | Exact lookups stay deterministic; semantics only add candidates. M0 found half the paraphrase misses have only session events behind them, and the absolute-cosine gate leaked abstentions. |
+| P7 | The embedder is pinned (Qwen3-Embedding-0.6B) with its prefix and thresholds, and config takes only a loopback `url`. A served model that does not match is an error. | The thresholds are calibrated to one model; a free model field would allow a silently miscalibrated gate. |
 
 ## Sequence
 
@@ -105,3 +106,14 @@ Agents called recall themselves in 51 of 988 sessions. With hook rendering, abou
 | Codex hooks | `~/usr/dotfiles/base/.codex/config.toml` `[[hooks.Stop]]` |
 | Claude Code hooks | `~/usr/dotfiles/base/.claude/settings.json` `.hooks` |
 | `do` recall rule | `~/usr/dotfiles/base/.agents/skills/do/SKILL.md:22` |
+
+### M4 (2026-11-06, Qwen3-Embedding-0.6B Q8_0, 256 dimensions; gate similarity ≥ .74 and margin ≥ .08, chosen on dev)
+
+| Split | Recall@5, lexical → hybrid | Paraphrase Recall@5 | Correct abstention | Identifier categories | Median latency |
+| --- | --- | --- | --- | --- | --- |
+| dev | .65 → .70 | .16 → .23 | .89 → .89 | unchanged | 20 → 36 ms |
+| heldout | .68 → .74 | .19 → .25 | 1.00 → 1.00 | unchanged | 20 → 35 ms |
+| heldout-2 | .34 → .37 | .03 → .07 | 1.00 → 1.00 | unchanged | 19 → 31 ms |
+| heldout-2, 150-session haystack | .34 → .37 | .03 → .07 | 1.00 → 1.00 | unchanged | 26 → 45 ms |
+
+Fallback (semantic only after lexical abstains) matched hybrid on every split. Leakage and stale violations stayed 0. Indexing 7,600 documents took 38 s, at about 1 KB of vector each. **A1 not met** (+4 paraphrase points against +15). nomic-embed-text-v1.5 was tried first: at zero new false answers on dev it rescued at most 5 of 53 lexical misses, against 7 for Qwen3 with the combined gate.
