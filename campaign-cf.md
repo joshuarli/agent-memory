@@ -4,8 +4,9 @@
 
 - **Goal:** The production bundle runs in local workerd from the release config, with real local D1 and R2. The real Python client is tested against it offline, the November 5 cost fixes are guarded by executable tests, stats telemetry contracts are checked, and one `make check` gates deploys. The campaign ends with one cost reduction that is deployed and verified by `statsctl`.
 - **Base revision:** `4b2eaa6`. Baseline green (see **Baseline**).
-- **Accepted:** none. **Red:** none. **Parked:** none.
-- **Next slice:** S1.
+- **Accepted:** S1 (`aa32669`). **Red:** none. **Parked:** none.
+- **S1 evidence:** `make worker-test` 138 pass; bundle digest `3cca3896…` unchanged across the Miniflare bump; `make lint` green.
+- **Next slice:** S2.
 
 ## Charter
 
