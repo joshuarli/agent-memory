@@ -10,6 +10,7 @@ import re
 import select
 import shutil
 import sqlite3
+import ssl
 import subprocess
 import sys
 import tempfile
@@ -1586,31 +1587,33 @@ def ensure_age():
         os.environ["AGE_BIN"] = result.stdout.strip()
 
 
-def start_integration_server(node, worker_dir, collectors, tls=None, extra_env=None):
-    env = dict(os.environ)
-    env["COLLECTORS"] = json.dumps(collectors)
-    if tls is not None:
-        env["TLS_KEY"], env["TLS_CERT"] = str(tls[0]), str(tls[1])
+def start_local_stack(node, worker_dir, collectors, extra_env=None):
+    arguments = [node, "local/cli.mjs", "serve", "--ephemeral", "--origins", json.dumps(collectors)]
     if extra_env:
-        env.update({key: str(value) for key, value in extra_env.items()})
+        if extra_env.get("TEST_STATE") == "1":
+            arguments.append("--test-state")
+        if "FAULT_EVERY" in extra_env:
+            arguments.extend(["--fault-every", str(extra_env["FAULT_EVERY"])])
+        if "FAULT_STATUSES" in extra_env:
+            arguments.extend(["--fault-statuses", str(extra_env["FAULT_STATUSES"])])
     process = subprocess.Popen(
-        [node, "test/integration-server.mjs"], cwd=str(worker_dir),
-        stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, env=env)
+        arguments, cwd=str(worker_dir),
+        stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
     stdout = process.stdout
     if stdout is None:
-        raise AssertionError("mirror integration server has no output stream")
+        raise AssertionError("local stack has no output stream")
     ready, _, _ = select.select([stdout], [], [], 30)
     if not ready:
         process.kill()
         _, stderr = process.communicate(timeout=10)
-        raise AssertionError("mirror integration server did not start: " + (stderr.strip() or "timeout"))
+        raise AssertionError("local stack did not start: " + (stderr.strip() or "timeout"))
     line = stdout.readline()
     try:
-        return process, int(json.loads(line)["port"])
+        return process, json.loads(line)
     except (ValueError, KeyError, TypeError):
         process.kill()
         _, stderr = process.communicate(timeout=10)
-        raise AssertionError("mirror integration server did not start: " + (stderr.strip() or line.strip())) from None
+        raise AssertionError("local stack did not start: " + (stderr.strip() or line.strip())) from None
 
 
 def stop_integration_server(process):
@@ -1646,13 +1649,16 @@ class MirrorIntegrationTests(unittest.TestCase):
         self.recipient = mirror_crypto.keygen(self.identity)
         self.recipients_file = self.root / "recipients.txt"
         self.recipients_file.write_text(self.recipient + "\n")
-        self.token_file = self.root / "token.json"
-        self.token_file.write_text('{"client_id":"collector-client.access","client_secret":"synthetic"}')
-        os.chmod(self.token_file, 0o600)
         self.process: subprocess.Popen[str] | None = None
-        self.port = self.start_server()
+        self.info = self.start_server()
+        self.port = self.info["port"]
+        self.ca_file = Path(self.info["ca_file"])
+        self.token_file = self.root / "token.json"
+        self.token_file.write_text(Path(self.info["token_files"]["origin-a"]).read_text())
+        os.chmod(self.token_file, 0o600)
+        self.tls = ssl.create_default_context(cafile=str(self.ca_file))
         self.config = mirror.MirrorConfig(
-            url="http://127.0.0.1:%d" % self.port,
+            url="https://127.0.0.1:%d" % self.port,
             service_token_file=self.token_file,
             age_recipients_file=self.recipients_file,
             age_identity_file=self.identity,
@@ -1666,15 +1672,16 @@ class MirrorIntegrationTests(unittest.TestCase):
         self.temporary.cleanup()
 
     def start_server(self):
-        self.process, port = start_integration_server(
+        self.process, info = start_local_stack(
             self.node, self.worker_dir,
             [{"client_id": "collector-client.access", "origin": "origin-a"}])
-        return port
+        return info
 
     def client(self, config=None):
         return mirror.MirrorClient(
             config or self.config,
-            factory=lambda: http.client.HTTPConnection("127.0.0.1", self.port, timeout=30))
+            factory=lambda: http.client.HTTPSConnection(
+                "127.0.0.1", self.port, timeout=30, context=self.tls))
 
     def set_origin(self, store):
         with store.db:
@@ -2109,29 +2116,17 @@ class MirrorCliTests(unittest.TestCase):
         cls.bundle = cls.worker_dir / ".cloudflare" / "output" / "v0" / "workers" / "default" / "bundle" / "index.js"
         if not cls.bundle.is_file():
             raise AssertionError("missing worker bundle; run `npm run build` in cloudflare/")
-        openssl = shutil.which("openssl")
-        if openssl is None:
-            raise AssertionError("openssl is required for the mirror CLI tests")
-        cls.certificates = tempfile.TemporaryDirectory(dir=str(WORK_TMP))
-        cls.tls_key = Path(cls.certificates.name) / "key.pem"
-        cls.tls_cert = Path(cls.certificates.name) / "cert.pem"
-        result = subprocess.run(
-            [openssl, "req", "-x509", "-newkey", "rsa:2048", "-nodes",
-             "-keyout", str(cls.tls_key), "-out", str(cls.tls_cert), "-days", "1",
-             "-subj", "/CN=127.0.0.1", "-addext", "subjectAltName=IP:127.0.0.1"],
-            stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
-        if result.returncode != 0:
-            raise AssertionError("cannot generate a test certificate: " + result.stderr.strip())
-        cls.process, cls.port = start_integration_server(
+        cls.process, cls.info = start_local_stack(
             cls.node, cls.worker_dir,
-            [{"client_id": "collector-client.access", "origin": "origin-a"}],
-            tls=(cls.tls_key, cls.tls_cert))
+            [{"client_id": "collector-client.access", "origin": "origin-a"}])
+        cls.port = cls.info["port"]
+        cls.ca_file = Path(cls.info["ca_file"])
+        cls.token_source = Path(cls.info["token_files"]["origin-a"])
         cls.url = "https://127.0.0.1:%d" % cls.port
 
     @classmethod
     def tearDownClass(cls):
         stop_integration_server(cls.process)
-        cls.certificates.cleanup()
 
     def setUp(self):
         self.temporary = tempfile.TemporaryDirectory(dir=str(WORK_TMP))
@@ -2146,12 +2141,12 @@ class MirrorCliTests(unittest.TestCase):
         self.recovery = self.root / "recovery.key"
         self.recipients = self.root / "recipients.txt"
         self.token = self.root / "token.json"
-        self.token.write_text(json.dumps({"client_id": "collector-client.access", "client_secret": "synthetic"}))
+        self.token.write_text(self.token_source.read_text())
         os.chmod(self.token, 0o600)
         keys = ("PATH", "LANG", "LC_ALL", "TMPDIR", "GIT_TEMPLATE_DIR", "AGE_BIN")
         self.env = {key: os.environ[key] for key in keys if key in os.environ}
         self.env["HOME"] = str(self.home)
-        self.env["SSL_CERT_FILE"] = str(self.tls_cert)
+        self.env["SSL_CERT_FILE"] = str(self.ca_file)
         self.empty_root = self.root / "empty"
         self.empty_root.mkdir()
         self.cli = testkit.command("agent-sessions")
@@ -2423,8 +2418,11 @@ class MemoryGateTests(unittest.TestCase):
         bundle = worker_dir / ".cloudflare" / "output" / "v0" / "workers" / "default" / "bundle" / "index.js"
         if not bundle.is_file():
             raise AssertionError("missing worker bundle; run `npm run build` in cloudflare/")
-        cls.process, cls.port = start_integration_server(
+        cls.process, cls.info = start_local_stack(
             node, worker_dir, [{"client_id": "collector-client.access", "origin": "origin-a"}])
+        cls.port = cls.info["port"]
+        cls.ca_file = Path(cls.info["ca_file"])
+        cls.token_source = Path(cls.info["token_files"]["origin-a"])
 
     @classmethod
     def tearDownClass(cls):
@@ -2438,7 +2436,7 @@ class MemoryGateTests(unittest.TestCase):
         self.recipients = self.root / "recipients.txt"
         self.recipients.write_text(recipient + "\n")
         self.token = self.root / "token.json"
-        self.token.write_text(json.dumps({"client_id": "collector-client.access", "client_secret": "synthetic"}))
+        self.token.write_text(self.token_source.read_text())
         os.chmod(self.token, 0o600)
         self.archive = self.root / "archive"
         self.archive.mkdir()
@@ -2448,13 +2446,14 @@ class MemoryGateTests(unittest.TestCase):
 
     def test_an_eight_mebibyte_artifact_and_a_mebibyte_chunk_stay_bounded(self):
         settings = {
-            "src": str(testkit.SRC), "url": "http://127.0.0.1:%d" % self.port,
-            "token": str(self.token), "identity": str(self.identity),
+            "src": str(testkit.SRC), "url": "https://127.0.0.1:%d" % self.port,
+            "ca_file": str(self.ca_file), "token": str(self.token), "identity": str(self.identity),
             "recipients": str(self.recipients), "archive": str(self.archive),
         }
         env = {key: os.environ[key] for key in ("PATH", "LANG", "LC_ALL", "AGE_BIN") if key in os.environ}
         env["HOME"] = str(self.root)
         env["TMPDIR"] = str(WORK_TMP)
+        env["SSL_CERT_FILE"] = str(self.ca_file)
         env["MEMORY_GATE"] = json.dumps(settings)
         script = r"""
 import hashlib
@@ -2462,6 +2461,7 @@ import http.client
 import json
 import os
 import resource
+import ssl
 import sys
 from pathlib import Path
 
@@ -2478,7 +2478,9 @@ def peak_kib():
 
 def make_client():
     return mirror.MirrorClient(
-        config, factory=lambda: http.client.HTTPConnection("127.0.0.1", port, timeout=60),
+        config, factory=lambda: http.client.HTTPSConnection(
+            "127.0.0.1", port, timeout=60,
+            context=ssl.create_default_context(cafile=settings["ca_file"])),
         sleep=lambda delay: None)
 
 
@@ -2549,9 +2551,12 @@ class LoadRunTests(unittest.TestCase):
             raise AssertionError("missing worker bundle; run `npm run build` in cloudflare/")
         collectors = [{"client_id": "load-%d.access" % index, "origin": "load-%d" % index}
                       for index in range(cls.COLLECTORS)]
-        cls.process, cls.port = start_integration_server(
+        cls.process, cls.info = start_local_stack(
             node, cls.worker_dir, collectors,
             extra_env={"TEST_STATE": "1", "FAULT_EVERY": "13", "FAULT_STATUSES": "429,500"})
+        cls.port = cls.info["port"]
+        cls.ca_file = Path(cls.info["ca_file"])
+        cls.token_sources = cls.info["token_files"]
 
     @classmethod
     def tearDownClass(cls):
@@ -2565,13 +2570,13 @@ class LoadRunTests(unittest.TestCase):
         self.recipients_file = self.root / "recipients.txt"
         self.recipients_file.write_text(recipient + "\n")
         self.recipients = mirror_crypto.load_recipients(self.recipients_file)
+        self.tls = ssl.create_default_context(cafile=str(self.ca_file))
         self.stores = []
         self.paths = []
         self.configs = []
         for index in range(self.COLLECTORS):
             token = self.root / ("token-%d.json" % index)
-            token.write_text(json.dumps({
-                "client_id": "load-%d.access" % index, "client_secret": "synthetic"}))
+            token.write_text(Path(self.token_sources["load-%d" % index]).read_text())
             os.chmod(token, 0o600)
             path = self.root / ("state-%d" % index)
             self.paths.append(path)
@@ -2583,7 +2588,7 @@ class LoadRunTests(unittest.TestCase):
                     ("load-%d" % index, "load-%d" % index))
             self.stores.append(store)
             self.configs.append(mirror.MirrorConfig(
-                url="http://127.0.0.1:%d" % self.port, service_token_file=token,
+                url="https://127.0.0.1:%d" % self.port, service_token_file=token,
                 age_recipients_file=self.recipients_file, age_identity_file=self.identity,
                 learning_projection=False))
 
@@ -2595,7 +2600,8 @@ class LoadRunTests(unittest.TestCase):
     def client(self, config):
         return mirror.MirrorClient(
             config,
-            factory=lambda: http.client.HTTPConnection("127.0.0.1", self.port, timeout=60),
+            factory=lambda: http.client.HTTPSConnection(
+                "127.0.0.1", self.port, timeout=60, context=self.tls),
             sleep=lambda delay: None)
 
     def capture(self, store, index, number):
@@ -2671,7 +2677,7 @@ class LoadRunTests(unittest.TestCase):
             finally:
                 client.close()
 
-        status, _headers, body = _load_faults(self.port)
+        status, _headers, body = _load_faults(self.port, self.tls)
         self.assertEqual(status, 200)
         faults = json.loads(body)
         self.assertGreater(faults["faults"], 0)
@@ -2679,8 +2685,8 @@ class LoadRunTests(unittest.TestCase):
             p50, p95, faults["faults"], faults["requests"]))
 
 
-def _load_faults(port):
-    connection = http.client.HTTPConnection("127.0.0.1", port, timeout=30)
+def _load_faults(port, context):
+    connection = http.client.HTTPSConnection("127.0.0.1", port, timeout=30, context=context)
     try:
         connection.request("GET", "/__test/faults")
         response = connection.getresponse()

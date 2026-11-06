@@ -527,8 +527,12 @@ def _report(directory):
     return 0
 
 
+_WORKER_TLS_CONTEXT = None
+
+
 def _bench_http(port, method, path, headers=None, body=None):
-    connection = http.client.HTTPConnection("127.0.0.1", port, timeout=120)
+    connection = http.client.HTTPSConnection(
+        "127.0.0.1", port, timeout=120, context=_WORKER_TLS_CONTEXT or ssl.create_default_context())
     try:
         connection.request(method, path, headers=headers or {}, body=body)
         response = connection.getresponse()
@@ -546,6 +550,7 @@ def _bench_counters(port):
 
 
 def _worker_server():
+    global _WORKER_TLS_CONTEXT
     node = shutil.which("node")
     if node is None:
         raise RuntimeError("node is required for worker benchmarks")
@@ -553,8 +558,9 @@ def _worker_server():
     bundle = worker_dir / ".cloudflare" / "output" / "v0" / "workers" / "default" / "bundle" / "index.js"
     if not bundle.is_file():
         raise RuntimeError("missing worker bundle; run `npm run build` in cloudflare/")
-    process = subprocess.Popen([node, "test/serve.mjs"], cwd=worker_dir, stdout=subprocess.PIPE,
-                               stderr=subprocess.PIPE, text=True)
+    process = subprocess.Popen(
+        [node, "local/cli.mjs", "serve", "--ephemeral", "--origins", "[]"],
+        cwd=worker_dir, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
     stdout = process.stdout
     if stdout is None:
         raise RuntimeError("worker bench server has no output stream")
@@ -565,12 +571,15 @@ def _worker_server():
         raise RuntimeError("worker bench server did not start: " + (stderr.strip() or "timeout"))
     line = stdout.readline()
     try:
-        port = int(json.loads(line)["port"])
+        info = json.loads(line)
+        if not isinstance(info.get("port"), int):
+            raise ValueError("port is missing")
+        _WORKER_TLS_CONTEXT = ssl.create_default_context(cafile=info["ca_file"])
     except (ValueError, KeyError, TypeError):
         process.kill()
         _, stderr = process.communicate(timeout=10)
         raise RuntimeError("worker bench server did not start: " + (stderr.strip() or line.strip())) from None
-    return process, port
+    return process, info
 
 
 def _worker(args):
@@ -581,7 +590,8 @@ def _worker(args):
         return 2
     if args.repeats < 1:
         raise ValueError("repeats must be positive")
-    process, port = _worker_server()
+    process, info = _worker_server()
+    port = info["port"]
     try:
         auth_status, _headers, _body = _bench_http(port, "GET", "/api/v1/status")
         if auth_status != 403:
@@ -639,7 +649,7 @@ def _worker(args):
     if scenario == "search":
         dataset.update({"records": args.records, "projects": 100, "sources": args.records})
     document = _document("miniflare", scenario, dataset, samples, tuple(name for name, _path in operations),
-                         runtime={**_runtime(), "workerd": "2026-08-06", "miniflare": "4.20260730.0"})
+                         runtime={**_runtime(), **info.get("runtime", {})})
     _write(document, Path(args.out) if Path(args.out).is_absolute() else ROOT / args.out)
     print(json.dumps(document, indent=2, sort_keys=True))
     variance = document.get("counter_variance")

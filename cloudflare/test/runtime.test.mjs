@@ -22,10 +22,10 @@ test("the deployment module graph serves SDK calls in workerd", async (t) => {
   const stack = await createStack({
     readers: "reader@example.test",
     identity: { email: "reader@example.test" },
-    hostFromUrl: true,
+    harness: true,
   });
   t.after(() => stack.dispose());
-  assert.ok(stack.moduleNames.includes("routes/mcp-bundled.js"));
+  assert.ok(stack.config.manifest.modules["routes/mcp-bundled.js"] !== undefined);
   await seedDatabase(await stack.d1());
   const endpoint = new URL("https://memories.17166969.xyz/mcp");
   const client = new Client({ name: "workerd-client", version: "1" });

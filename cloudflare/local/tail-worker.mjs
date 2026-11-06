@@ -7,7 +7,6 @@ export default {
   async fetch(request) {
     const { pathname } = new URL(request.url);
     if (pathname === "/__tail/events") return Response.json(captured);
-    if (pathname === "/__tail/drain") return Response.json(captured.splice(0));
     if (pathname === "/__tail/health") return new Response("ok");
     return new Response("not found", { status: 404 });
   },

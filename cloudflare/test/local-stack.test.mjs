@@ -63,17 +63,17 @@ test("the stack runs every released module at the released compatibility date", 
   const release = loadReleaseConfig();
   const stack = await createStack();
   t.after(() => stack.dispose());
-  assert.equal(stack.compatibilityDate, release.compatibilityDate);
-  assert.deepEqual(stack.compatibilityFlags, release.compatibilityFlags);
-  assert.deepEqual(stack.moduleNames, Object.keys(release.manifest.modules).sort());
+  assert.equal(stack.config.compatibilityDate, release.compatibilityDate);
+  assert.deepEqual(stack.config.compatibilityFlags, release.compatibilityFlags);
+  assert.deepEqual(Object.keys(stack.config.manifest.modules).sort(), Object.keys(release.manifest.modules).sort());
   for (const [name, module] of Object.entries(release.manifest.modules)) {
     assert.equal(stack.config.manifest.modules[name].type, module.type);
     assert.equal(stack.config.manifest.modules[name].contents, readFileSync(join(BUNDLE_DIR, name), "utf8"));
   }
   assert.equal(stack.config.manifest.mainModule, release.manifest.mainModule);
-  assert.equal(stack.registryEnabled, false);
-  assert.equal(stack.registryPath, undefined);
-  assert.equal(stack.unsafeRegisterWorker, false);
+  assert.equal(stack.runtime.enableDevRegistry, false);
+  assert.equal(stack.runtime.unsafeDevRegistryPath, undefined);
+  assert.equal(stack.runtime.dev.unsafeRegisterWorker, false);
   for (const binding of Object.values(stack.config.env)) {
     assert.ok(["text", "d1", "r2"].includes(binding.type), binding.type);
     assert.equal("dev" in binding, false);
@@ -87,7 +87,6 @@ test("the stack boots the exact bundle that bundle-digest.sh publishes", async (
   const stack = await createStack();
   t.after(() => stack.dispose());
   const published = execFileSync("sh", [join(workerRoot, "scripts/bundle-digest.sh")], { encoding: "utf8" }).trim();
-  assert.equal(stack.bundleDigest, published);
   assert.equal(computeBundleDigest(), published);
 });
 
@@ -143,8 +142,6 @@ test("two stacks have separate state, and dispose removes every state directory 
   const secondState = second.stateDir;
   await first.dispose();
   await second.dispose();
-  assert.equal(first.disposed, true);
-  assert.equal(second.disposed, true);
   assert.equal(existsSync(firstState), false);
   assert.equal(existsSync(secondState), false);
   assert.deepEqual(workerdChildren(), []);

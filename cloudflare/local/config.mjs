@@ -9,10 +9,7 @@ export const BUNDLE_DIR = join(workerRoot, ".cloudflare/output/v0/workers/defaul
 export const WORKER_CONFIG_PATH = join(workerRoot, ".cloudflare/output/v0/workers/default/worker.config.json");
 const ACCESS_OVERRIDES = new Set(["ACCESS_TEAM_DOMAIN", "ACCESS_AUD"]);
 
-const TOP_LEVEL = new Set([
-  "name", "compatibilityDate", "compatibilityFlags", "domains", "tailConsumers",
-  "observability", "exports", "workersDev", "previewUrls", "env", "manifest",
-]);
+const TOP_LEVEL = new Set(["name", "compatibilityDate", "compatibilityFlags", "domains", "tailConsumers", "observability", "exports", "workersDev", "previewUrls", "env", "manifest"]);
 const BINDING_KEYS = {
   text: new Set(["type", "value"]),
   d1: new Set(["type", "name", "id"]),
@@ -82,9 +79,7 @@ export function validateReleaseConfig(config) {
       if (consumer.worker !== "stats-observe") fail(`${key}.worker must be "stats-observe"`);
     }
   }
-  if (config.observability !== undefined && !record(config.observability)) {
-    fail("observability must be an object");
-  }
+  if (config.observability !== undefined && !record(config.observability)) fail("observability must be an object");
   if (config.exports !== undefined) {
     if (!record(config.exports)) fail("exports must be an object");
     for (const property of Object.keys(config.exports)) {
@@ -163,10 +158,12 @@ export function prepareWorkerConfig(config, options = {}) {
     if (prepared.env?.READERS !== undefined) fail("env.READERS is not an allowed override");
     prepared.env = { ...prepared.env, READERS: { type: "text", value: options.readers } };
   }
-  if (options.identity !== undefined) {
+  if (options.identity !== undefined || options.accessService === true) {
     const audience = prepared.env?.ACCESS_AUD?.value;
-    if (typeof audience !== "string" || audience === "") fail("identity needs an ACCESS_AUD text binding");
-    prepared.access = { dev: { aud: audience, identity: options.identity } };
+    if (typeof audience !== "string" || audience === "") fail("access needs an ACCESS_AUD text binding");
+    prepared.access = {
+      dev: options.identity !== undefined ? { aud: audience, identity: options.identity } : { aud: audience },
+    };
   }
   return prepared;
 }

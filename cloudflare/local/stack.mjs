@@ -12,10 +12,13 @@ const repoRoot = dirname(workerRoot);
 const outputRoot = join(workerRoot, ".cloudflare/output");
 const scratchRoot = join(repoRoot, ".work/tmp");
 const tailModule = new URL("./tail-worker.mjs", import.meta.url);
+const faultModule = new URL("./fault-entry.mjs", import.meta.url);
 
-export { BUNDLE_DIR, WORKER_CONFIG_PATH };
+export { BUNDLE_DIR };
 
-export const BUNDLE_PATH = join(BUNDLE_DIR, "index.js");
+function fail(message) {
+  throw new Error(`local stack: ${message}`);
+}
 
 function filesUnder(directory, prefix = "") {
   const files = [];
@@ -38,19 +41,6 @@ function stateDirectory() {
   return join(scratchRoot, `stack-${process.pid}-${randomBytes(6).toString("hex")}`);
 }
 
-function hostEntry(mainModule) {
-  return `
-import worker from "./${mainModule}";
-export default {
-  async fetch(request, env, context) {
-    const headers = new Headers(request.headers);
-    headers.set("Host", new URL(request.url).host);
-    return await worker.fetch(new Request(request, { headers }), env, context);
-  },
-};
-`;
-}
-
 function writeFailure(stateDir, logs, reason) {
   const path = join(stateDir, "workerd.log");
   try {
@@ -70,42 +60,52 @@ function writeFailure(stateDir, logs, reason) {
 
 export async function createStack(options = {}) {
   const release = loadReleaseConfig(options.configPath ?? WORKER_CONFIG_PATH);
+  const releaseMainModule = release.manifest.mainModule;
   const config = prepareWorkerConfig(release, {
     teamDomain: options.teamDomain,
     audience: options.audience,
     readers: options.readers,
     identity: options.identity,
+    accessService: options.accessService === true,
     bundle: options.bundle,
   });
-  if (options.hostFromUrl === true) {
-    const mainModule = config.manifest.mainModule;
-    config.manifest.modules["entry-host.js"] = { type: "esm", contents: hostEntry(mainModule) };
-    config.manifest.mainModule = "entry-host.js";
+  for (const [name, value] of Object.entries(options.bindings ?? {})) {
+    if (config.env?.[name] !== undefined) fail(`binding ${name} already exists`);
+    config.env = { ...config.env, [name]: { type: "text", value: String(value) } };
+  }
+  if (options.harness === true) {
+    const contents = readFileSync(fileURLToPath(faultModule), "utf8");
+    config.manifest.modules["fault-entry.mjs"] = { type: "esm", contents };
+    config.manifest.mainModule = "fault-entry.mjs";
   }
   const stateDir = options.stateDir ?? stateDirectory();
   mkdirSync(stateDir, { recursive: true });
 
   const logs = [];
   const outbound = [];
+  const outboundHandler = async (request) => {
+    outbound.push(request.url);
+    const response = options.outbound === undefined ? undefined : await options.outbound(request);
+    return response ?? new Response("outbound request blocked", {
+      status: 599,
+      headers: { "content-type": "text/plain" },
+    });
+  };
+  const devOptions = () => ({
+    unsafeRegisterWorker: false,
+    outboundService: { type: "fetcher", handler: outboundHandler },
+  });
+  const workers = [{ config, dev: devOptions() }];
+  let collectorName;
+  if (options.collectorWorker === true) {
+    const collector = JSON.parse(JSON.stringify(config));
+    collector.name = `${config.name}-collectors`;
+    collector.manifest.mainModule = releaseMainModule;
+    delete collector.access;
+    collectorName = collector.name;
+    workers.push({ config: collector, dev: devOptions() });
+  }
   const tailSource = readFileSync(fileURLToPath(tailModule), "utf8");
-  const workers = [
-    {
-      config,
-      dev: {
-        unsafeRegisterWorker: false,
-        outboundService: {
-          type: "fetcher",
-          handler: async (request) => {
-            outbound.push(request.url);
-            return new Response("outbound request blocked", {
-              status: 599,
-              headers: { "content-type": "text/plain" },
-            });
-          },
-        },
-      },
-    },
-  ];
   if (config.tailConsumers !== undefined) {
     workers.push({
       config: {
@@ -148,6 +148,7 @@ export async function createStack(options = {}) {
     allowOutbound: options.allowOutbound ?? (() => false),
     runtimeOptions,
     devOptions: workers[0].dev,
+    collectorName,
   });
 }
 
@@ -160,12 +161,12 @@ class LocalStack {
   #allowOutbound;
   #runtimeOptions;
   #devOptions;
+  #collectorName;
   #disposed = false;
   #d1;
   #r2;
-  #digest;
 
-  constructor({ miniflare, stateDir, config, logs, outbound, allowOutbound, runtimeOptions, devOptions }) {
+  constructor({ miniflare, stateDir, config, logs, outbound, allowOutbound, runtimeOptions, devOptions, collectorName }) {
     this.#miniflare = miniflare;
     this.#stateDir = stateDir;
     this.#config = config;
@@ -174,6 +175,7 @@ class LocalStack {
     this.#allowOutbound = allowOutbound;
     this.#runtimeOptions = runtimeOptions;
     this.#devOptions = devOptions;
+    this.#collectorName = collectorName;
   }
 
   get stateDir() {
@@ -184,41 +186,12 @@ class LocalStack {
     return this.#config;
   }
 
-  get compatibilityDate() {
-    return this.#config.compatibilityDate;
-  }
-
-  get compatibilityFlags() {
-    return [...(this.#config.compatibilityFlags ?? [])];
-  }
-
-  get moduleNames() {
-    return Object.keys(this.#config.manifest.modules).sort();
-  }
-
-  get registryEnabled() {
-    return this.#runtimeOptions.enableDevRegistry;
-  }
-
-  get registryPath() {
-    return this.#runtimeOptions.unsafeDevRegistryPath;
-  }
-
-  get unsafeRegisterWorker() {
-    return this.#devOptions.unsafeRegisterWorker;
+  get runtime() {
+    return { ...this.#runtimeOptions, dev: this.#devOptions };
   }
 
   get outbound() {
     return [...this.#outbound];
-  }
-
-  get disposed() {
-    return this.#disposed;
-  }
-
-  get bundleDigest() {
-    this.#digest ??= computeBundleDigest();
-    return this.#digest;
   }
 
   async d1() {
@@ -246,8 +219,9 @@ class LocalStack {
     return this.#miniflare.dispatchFetch(input, init);
   }
 
-  getWorker(name) {
-    return this.#miniflare.getWorker(name);
+  async collectorWorker() {
+    if (this.#collectorName === undefined) throw new Error("local stack: no collector worker");
+    return await this.#miniflare.getWorker(this.#collectorName);
   }
 
   async tailEvents() {
@@ -256,16 +230,6 @@ class LocalStack {
     }
     const worker = await this.#miniflare.getWorker("stats-observe");
     const response = await worker.fetch("http://stats-observe/__tail/events");
-    if (!response.ok) throw new Error(`local stack: tail worker returned ${response.status}`);
-    return await response.json();
-  }
-
-  async drainTailEvents() {
-    if (this.#config.tailConsumers === undefined) {
-      throw new Error("local stack: the release config has no tail worker");
-    }
-    const worker = await this.#miniflare.getWorker("stats-observe");
-    const response = await worker.fetch("http://stats-observe/__tail/drain");
     if (!response.ok) throw new Error(`local stack: tail worker returned ${response.status}`);
     return await response.json();
   }
