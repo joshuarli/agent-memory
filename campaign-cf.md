@@ -4,12 +4,13 @@
 
 - **Goal:** The production bundle runs in local workerd from the release config, with real local D1 and R2. The real Python client is tested against it offline, the November 5 cost fixes are guarded by executable tests, stats telemetry contracts are checked, and one `make check` gates deploys. The campaign ends with one cost reduction that is deployed and verified by `statsctl`.
 - **Base revision:** `4b2eaa6`. Baseline green (see **Baseline**).
-- **Accepted:** S1 (`aa32669`), S2 (`8ae85a2`), S3 (`87f2af1`), S4 (`4e5667f`). **Red:** none. **Parked:** none.
+- **Accepted:** S1 (`aa32669`), S2 (`8ae85a2`), S3 (`87f2af1`), S4 (`4e5667f`), S5 (`b19be38`). **Red:** none. **Parked:** none.
 - **S1 evidence:** `make worker-test` 138 pass; bundle digest `3cca3896…` unchanged across the Miniflare bump; `make lint` green.
 - **S2 evidence:** 87 mirror tests pass; `make perf-worker REPEATS=1` exits 0; `make worker-test` 138 pass; `make lint` green.
 - **S3 evidence:** migration and schema tests 4 pass, including runner equivalence and the 0007→0009 upgrade; `make migrations-check` passes and rejects an edited migration; `make worker-test` 140 pass; `make lint` green.
 - **S4 evidence:** `DevModeTests` pass (sync, restart on the same state, unchanged second sync, `reset-local`); `make worker-test` 140 pass; search bench 100 records exits 0; `make lint` green.
-- **Next slice:** S5.
+- **S5 evidence:** 12 local-stack lifecycle and security tests pass with direct D1/R2 assertions; 87 mirror tests and 140 Worker tests pass; `make lint` green.
+- **Next slice:** S6.
 
 ## Charter
 
