@@ -4,7 +4,7 @@
 
 - **Goal:** The production bundle runs in local workerd from the release config, with real local D1 and R2. The real Python client is tested against it offline, the November 5 cost fixes are guarded by executable tests, stats telemetry contracts are checked, and one `make check` gates deploys. The campaign ends with one cost reduction that is deployed and verified by `statsctl`.
 - **Base revision:** `4b2eaa6`. Baseline green (see **Baseline**).
-- **Accepted:** S1 (`aa32669`), S2 (`8ae85a2`), S3 (`87f2af1`), S4 (`4e5667f`), S5 (`b19be38`), S6 (`9a3bf90`), S7 (`a559546`), S8 (`5aa26ab` in stats), S9 (`740f5d0`; stats `8f5005c`), S10 (`b1fdead`). **Red:** none. **Parked:** none.
+- **Accepted:** S1 (`aa32669`), S2 (`8ae85a2`), S3 (`87f2af1`), S4 (`4e5667f`), S5 (`b19be38`), S6 (`9a3bf90`), S7 (`a559546`), S8 (`5aa26ab` in stats), S9 (`740f5d0`; stats `8f5005c`), S10 (`b1fdead`), S11 (`253e57c`), S12 local (`ccf43d5`; stats policy `f6beb45`). **Red:** none. **Parked:** S12 production, waiting on the 24-hour window and `statsctl`.
 - **S1 evidence:** `make worker-test` 138 pass; bundle digest `3cca3896…` unchanged across the Miniflare bump; `make lint` green.
 - **S2 evidence:** 87 mirror tests pass; `make perf-worker REPEATS=1` exits 0; `make worker-test` 138 pass; `make lint` green.
 - **S3 evidence:** migration and schema tests 4 pass, including runner equivalence and the 0007→0009 upgrade; `make migrations-check` passes and rejects an edited migration; `make worker-test` 140 pass; `make lint` green.
@@ -15,7 +15,10 @@
 - **S8 evidence:** stats `make cloudflare-test lint` passed (309 vitest tests and 156 observe/node tests; lint 0); commit `5aa26ab` pushed; `stats-observe` deployed at version `b77ec39d-81f2-4a75-a90b-eddd5f4a787e`.
 - **S9 evidence:** the 13 observe contract/observe/channel tests pass; `make worker-test` 149 pass; `make cost-check` 5 pass; `make lint` green. The real `stats-observe` attempt passes (stats commit `8f5005c`): the agent-memory bundle's `status.read` trace is observed.
 - **S10 evidence:** `make perf-cost` completes in 7m36s with 8 operations. The 30-day projection is $3.9705 (D1 written $3.9006, read $0.0695) on 3,900,643 rows written and 69,489,573 read; R2 Class A 461,551 and Class B 81,770. The initial backfill writes 645,607 rows; the hourly loop 4,512; the restore reads 244,032 and 80,960 objects. `make worker-test` 149, `make test-python`, `make integration-local`, `make cost-check`, `make lint`, and `make migrations-check` pass.
-- **Next slice:** S11.
+- **S11 evidence:** `make check` is green; `make deploy` exited 0 with tested bundle `d613579e…` and deployed `usr-memories` version `9b65f0be-22a7-4a3f-8045-6236e768a894`; `smoke-deployed` passed all six probes. `make migrations-production` was empty.
+- **S12 evidence (local):** migration `0010` drops `remote_object_gc`; the 80,000-object workload's hourly operation falls from 4,512 to 3,984 rows written (-11.7%) and the initial backfill from 645,607 to 565,206 (-12.4%); the projection falls from $3.9705 to $3.5300. `make check` is green and the cost test pins the 4-row upload and 10-row generation commit. The stats policy `usr-memories-gc-index` is committed and pushed (`f6beb45`).
+- **S12 production:** pending until at least 2026-11-07 10:40 PST (24 h after the S11 deploy), and `statsctl` is not installed in this environment. The exact next commands are in the final report.
+- **Next slice:** S12 production (deploy, warm-up, `statsctl verify`).
 
 ## Charter
 
@@ -228,14 +231,30 @@ Every deliverable, scenario, and invariant from the source draft, mapped to proo
 **A11. Verified cost reduction:** S12's verdict and evidence are under **Status**.
 
 **Final report** (S13):
-- the architecture changes and why
-- the commands that ran, with results
-- the S10 measurements before and after S12
-- remaining limitations
-- the commit SHAs (agent-memory and stats)
-- the deployed versions
-- the `statsctl` verdict
-- deferred work
+
+The campaign's local goal is met and the Worker is deployed. S12's production verification is the one deferred item.
+
+**Architecture.** The Worker bundle now boots in local workerd from the release `worker.config.json` (S1), behind a loopback Access edge with reader sessions, collector JWTs, TLS, fault hooks, and a test-only control API (S2). Migrations are proven equivalent to Cloudflare's local runner and frozen (S3). Persistent dev mode reuses the same state through Cloudflare's local runner (S4), and lifecycle, security, and reliability scenarios assert D1 rows and R2 keys directly, including under an offline sandbox (S5, S6). The fast cost test pins D1 row budgets and the schema's index set (S7). Every instrumented route publishes one `stats.observe` operation message with its D1 rows, and the collector accepts the same names (S8, S9). An 80,000-object workload records exact D1/R2 work and a 30-day projection (S10). `make check` gates `make deploy` (S11), and migration 0010 removes the write-side GC index (S12).
+
+**Commands and results.** `make worker-test` 149 pass; `make test-python` and `make integration-local` (16 mirror + 19 local-stack tests) pass; `make migrations-check`, `make cost-check`, `make lint`, and `make config-check` pass. `make perf-cost` completes in 7m36s with 8 operations. `make check` is green. `make deploy` exited 0 with tested bundle `d613579e…` and deployed version `9b65f0be-22a7-4a3f-8045-6236e768a894`; all six smoke probes passed. The stats gate passed (309 vitest and 156 observe/node tests), and the real `stats-observe` attempt observed the bundle's `status.read` trace.
+
+**S10 and S12 measurements.** The S10 projection was $3.9705 for 30 days on 3,900,643 D1 rows written and 69,489,573 read; Class A 461,551 and Class B 81,770 R2 operations. The hourly operation was the largest projected write source. Migration 0010 took the local hourly operation from 4,512 to 3,984 rows written (-11.7%), the initial backfill from 645,607 to 565,206 (-12.4%), and the projection to $3.5300. Rows read rose because the GC scan is now a table scan; at $0.001 per million the read change is below a cent. The production before/after measurement is not available until the S12 deploy and its 24-hour window.
+
+**Limitations.** Local D1 does not bill rows from a rolled-back batch, so the cost test measures the statements that ran. The local Access edge implements the service-token/JWT contract the Worker relies on, not Cloudflare's whole edge. The S10 workload uses identity objects and an identity-checked restore so it measures the Worker, not client age crypto. The Linux offline path (`unshare -rn`) is unverified on this macOS host. `statsctl` is not installed here, and S12's production check needs a signed-in Access session.
+
+**Commits.** agent-memory: `aa32669`, `8ae85a2`, `87f2af1`, `4e5667f`, `b19be38`, `9a3bf90`, `a559546`, `740f5d0`, `b1fdead`, `253e57c`, `ccf43d5`, plus this report. stats: `5aa26ab`, `8f5005c`, `f6beb45`. The S12 and final-report commits are local until the S12 deploy pushes `master`, per the campaign's push rule.
+
+**Deployed versions.** `usr-memories` `9b65f0be-22a7-4a3f-8045-6236e768a894`; `stats-observe` `b77ec39d-81f2-4a75-a90b-eddd5f4a787e`. The S12 Worker is not deployed.
+
+**statsctl verdict.** Not run: the 24-hour window after the S11 deploy has not elapsed and `statsctl` is absent. The policy `bench/policies/usr-memories-gc-index.json` is pushed in stats (`f6beb45`). The S12 production sequence is:
+
+1. After 2026-11-07 10:40 PST: `make check`, `git push`, `make migrations-production`, then `make migrate-production CONFIRM_DATABASE=9870c4da-3758-4f0c-ab6d-2372eb34009b` for `0010` if pending, then `make deploy`.
+2. Inside the warm-up: `statsctl check ingest --json > .work/statsctl/check.json`.
+3. `statsctl verify --project usr-memories --deployment <S12 deploy id> --policy ~/d/stats/bench/policies/usr-memories-gc-index.json --safety-check-file .work/statsctl/check.json --wait --timeout 48h --json`.
+
+Exit 0 is the success verdict. Exit 6 allows one rerun; exit 7 rolls back to `9b65f0be-22a7-4a3f-8045-6236e768a894` and parks S12; exit 5 records the printed resume command.
+
+**Deferred work.** S12 production deploy and `statsctl verify`; a Linux offline-sandbox run; a stats per-operation metric if usr-memories operation summaries become verifiable; the DEAD CODE literal scan matches only this campaign document, which contains its own historical instructions.
 
 ## Needs environment
 
