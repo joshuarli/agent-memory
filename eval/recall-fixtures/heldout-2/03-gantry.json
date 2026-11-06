@@ -1,0 +1,320 @@
+{
+ "now": "2026-10-20T12:00:00Z",
+ "projects": {
+  "gantry": {
+   "files": {
+    "main.tf": "terraform {\n  required_version = \">= 1.6\"\n  required_providers { aws = { source = \"hashicorp/aws\", version = \"~> 5.31\" } }\n  backend \"s3\" { bucket = \"gantry-tfstate\", key = \"prod/terraform.tfstate\", dynamodb_table = \"gantry-locks\" }\n}\n",
+    "modules/network/main.tf": "resource \"aws_subnet\" \"private\" {\n  count      = 3\n  vpc_id     = aws_vpc.main.id\n  cidr_block = cidrsubnet(var.cidr, 4, count.index)\n}\n",
+    "modules/queue/main.tf": "resource \"aws_sqs_queue\" \"jobs\" {\n  name                       = \"gantry-jobs\"\n  visibility_timeout_seconds = 60\n}\n",
+    "Makefile": "plan:\n\tterraform plan -out=tfplan\napply:\n\tterraform apply tfplan\n"
+   }
+  }
+ },
+ "episodes": [
+  {
+   "id": "gt-001",
+   "project": "gantry",
+   "harness": "claude",
+   "age_days": 45,
+   "turns": [
+    {
+     "user": "terraform plan wants to destroy and recreate all three private subnets after I only added a tag"
+    },
+    {
+     "tool": {
+      "cmd": "terraform plan -out=tfplan",
+      "output": "  # module.network.aws_subnet.private[0] must be replaced\n-/+ resource \"aws_subnet\" \"private\" {\n      ~ cidr_block = \"10.20.0.0/20\" -> \"10.20.16.0/20\" # forces replacement\nPlan: 3 to add, 0 to change, 3 to destroy.",
+      "exit": 0
+     }
+    },
+    {
+     "assistant": "cidrsubnet(var.cidr, 4, count.index) changed because someone edited var.cidr from 10.20.0.0/16 default in terraform.tfvars to a different base. The subnets in state were created under the old cidr. Revert the tfvars change and plan again."
+    },
+    {
+     "tool": {
+      "cmd": "git checkout HEAD~2 -- terraform.tfvars && terraform plan -out=tfplan",
+      "output": "No changes. Your infrastructure matches the configuration.",
+      "exit": 0
+     }
+    },
+    {
+     "user": "good, and never apply a plan that shows subnets being replaced, there are RDS instances in them"
+    }
+   ]
+  },
+  {
+   "id": "gt-002",
+   "project": "gantry",
+   "harness": "codex",
+   "age_days": 28,
+   "turns": [
+    {
+     "user": "apply is stuck: Error acquiring the state lock"
+    },
+    {
+     "tool": {
+      "cmd": "terraform apply tfplan",
+      "output": "Error: Error acquiring the state lock\n\nLock Info:\n  ID:        6f9a1e2c-7a31-4e0d-9b53-0c3f41d9a2aa\n  Path:      gantry-tfstate/prod/terraform.tfstate\n  Operation: OperationTypeApply\n  Who:       ci@runner-17\n  Created:   2026-09-22 02:14:09 UTC",
+      "exit": 1
+     }
+    },
+    {
+     "tool": {
+      "cmd": "gh run list --workflow=apply.yml --limit 3",
+      "output": "completed  cancelled  apply  main  2026-09-22T02:14:07Z",
+      "exit": 0
+     }
+    },
+    {
+     "assistant": "The CI apply job was cancelled mid-run and never released the DynamoDB lock. Confirmed no apply is in progress, so force-unlock is safe."
+    },
+    {
+     "tool": {
+      "cmd": "terraform force-unlock -force 6f9a1e2c-7a31-4e0d-9b53-0c3f41d9a2aa",
+      "output": "Terraform state has been successfully unlocked!",
+      "exit": 0
+     }
+    },
+    {
+     "tool": {
+      "cmd": "terraform apply tfplan",
+      "output": "Apply complete! Resources: 1 added, 0 changed, 0 destroyed.",
+      "exit": 0
+     }
+    }
+   ]
+  },
+  {
+   "id": "gt-003",
+   "project": "gantry",
+   "harness": "grok",
+   "age_days": 90,
+   "turns": [
+    {
+     "user": "SQS consumers keep processing the same message twice, jobs take about 90 seconds"
+    },
+    {
+     "tool": {
+      "cmd": "aws sqs get-queue-attributes --queue-url $JOBS_URL --attribute-names VisibilityTimeout ApproximateNumberOfMessagesNotVisible",
+      "output": "{\"Attributes\": {\"VisibilityTimeout\": \"60\", \"ApproximateNumberOfMessagesNotVisible\": \"212\"}}",
+      "exit": 0
+     }
+    },
+    {
+     "assistant": "Visibility timeout is 60 seconds but the p95 job takes 94 seconds, so the message reappears while still running. AWS suggests at least six times the function timeout for Lambda; for workers set it above p99 duration with headroom."
+    },
+    {
+     "tool": {
+      "cmd": "sed -i 's/visibility_timeout_seconds = 60/visibility_timeout_seconds = 180/' modules/queue/main.tf && terraform plan",
+      "output": "~ visibility_timeout_seconds = 60 -> 180\nPlan: 0 to add, 1 to change, 0 to destroy.",
+      "exit": 0
+     }
+    }
+   ]
+  },
+  {
+   "id": "gt-004",
+   "project": "gantry",
+   "harness": "muse",
+   "age_days": 18,
+   "turns": [
+    {
+     "user": "I tried upgrading the aws provider to 6.x to get the new s3 resources and plan exploded with hundreds of deprecation errors"
+    },
+    {
+     "user": "reverted to ~> 5.31, we will do provider 6 after the quarter, not now"
+    }
+   ]
+  },
+  {
+   "id": "gt-005",
+   "project": "gantry",
+   "harness": "codex",
+   "age_days": 120,
+   "turns": [
+    {
+     "user": "check if the prod tfstate drifted from what is deployed"
+    },
+    {
+     "tool": {
+      "cmd": "terraform plan -refresh-only -detailed-exitcode; echo exit=$?",
+      "output": "Note: Objects have changed outside of Terraform\n  # aws_security_group.bastion has changed\n      ~ ingress { + cidr_blocks = [\"203.0.113.9/32\"] }\nexit=2",
+      "exit": 0
+     }
+    },
+    {
+     "assistant": "Somebody added an ingress rule by hand in the console. Importing it into code rather than overwriting: the on-call engineer needed it."
+    }
+   ]
+  },
+  {
+   "id": "gt-006",
+   "project": "gantry",
+   "harness": "claude",
+   "age_days": 8,
+   "turns": [
+    {
+     "user": "add an ECS cluster module"
+    },
+    {
+     "assistant": "Created modules/ecs/main.tf with aws_ecs_cluster.main and a capacity provider; plan shows 2 to add."
+    }
+   ]
+  }
+ ],
+ "memories": [
+  {
+   "id": "m-gt-subnet",
+   "project": "gantry",
+   "age_days": 44,
+   "action": "Never apply a plan that replaces aws_subnet.private; check that var.cidr in terraform.tfvars is unchanged first because cidrsubnet() derives every subnet from it.",
+   "applicability": "Plans showing subnet replacement in the gantry network module.",
+   "sources": [
+    {
+     "episode": "gt-001",
+     "contains": "forces replacement"
+    }
+   ],
+   "validity": [
+    {
+     "path": "modules/network/main.tf",
+     "contains": "cidrsubnet(var.cidr, 4"
+    }
+   ]
+  },
+  {
+   "id": "m-gt-vis",
+   "project": "gantry",
+   "age_days": 85,
+   "action": "The jobs queue visibility_timeout_seconds must exceed worker p99 duration; set to 180.",
+   "applicability": "Tuning or debugging duplicate SQS deliveries from the jobs queue.",
+   "sources": [
+    {
+     "episode": "gt-003",
+     "contains": "p95 job takes 94 seconds"
+    }
+   ],
+   "validity": [
+    {
+     "path": "modules/queue/main.tf",
+     "contains": "visibility_timeout_seconds = 60"
+    }
+   ]
+  }
+ ],
+ "mutations": [
+  {
+   "project": "gantry",
+   "path": "modules/queue/main.tf",
+   "content": "resource \"aws_sqs_queue\" \"jobs\" {\n  name                       = \"gantry-jobs\"\n  visibility_timeout_seconds = 180\n  redrive_policy             = jsonencode({ maxReceiveCount = 5 })\n}\n",
+   "commit": true
+  }
+ ],
+ "cases": [
+  {
+   "id": "gt-c1",
+   "split": "heldout-2",
+   "category": "paraphrase",
+   "project": "gantry",
+   "query": "an innocuous metadata edit makes the infra tool want to tear down and rebuild our network segments",
+   "expect": "match",
+   "relevant": [
+    "gt-001"
+   ],
+   "valid_memories": [
+    "m-gt-subnet"
+   ]
+  },
+  {
+   "id": "gt-c2",
+   "split": "heldout-2",
+   "category": "exact_identifier",
+   "project": "gantry",
+   "query": "Error acquiring the state lock",
+   "expect": "match",
+   "relevant": [
+    "gt-002"
+   ]
+  },
+  {
+   "id": "gt-c3",
+   "split": "heldout-2",
+   "category": "paraphrase",
+   "project": "gantry",
+   "query": "a deploy was cancelled halfway and now nobody can run the next one",
+   "expect": "match",
+   "relevant": [
+    "gt-002"
+   ]
+  },
+  {
+   "id": "gt-c4",
+   "split": "heldout-2",
+   "category": "stale_source",
+   "project": "gantry",
+   "query": "messages get delivered twice because workers take longer than the hold-off period",
+   "expect": "match",
+   "relevant": [
+    "gt-003"
+   ],
+   "stale_memories": [
+    "m-gt-vis"
+   ],
+   "misleading": [
+    "gt-002"
+   ]
+  },
+  {
+   "id": "gt-c5",
+   "split": "heldout-2",
+   "category": "trajectory",
+   "project": "gantry",
+   "query": "move to the newest major version of the cloud provider plugin",
+   "expect": "match",
+   "relevant": [
+    "gt-004"
+   ]
+  },
+  {
+   "id": "gt-c6",
+   "split": "heldout-2",
+   "category": "paraphrase",
+   "project": "gantry",
+   "query": "someone changed a firewall rule through the web console, how did we handle it",
+   "expect": "match",
+   "relevant": [
+    "gt-005"
+   ]
+  },
+  {
+   "id": "gt-c7",
+   "split": "heldout-2",
+   "category": "path_symbol_command",
+   "project": "gantry",
+   "query": "terraform force-unlock",
+   "expect": "match",
+   "relevant": [
+    "gt-002"
+   ]
+  },
+  {
+   "id": "gt-c8",
+   "split": "heldout-2",
+   "category": "negative",
+   "project": "gantry",
+   "query": "configure the S3 backend with state encryption using a customer managed KMS key",
+   "expect": "abstain"
+  },
+  {
+   "id": "gt-c9",
+   "split": "heldout-2",
+   "category": "negative",
+   "project": "gantry",
+   "query": "terraform import for the RDS parameter group that nobody tracked",
+   "expect": "abstain",
+   "misleading": [
+    "gt-005"
+   ]
+  }
+ ]
+}

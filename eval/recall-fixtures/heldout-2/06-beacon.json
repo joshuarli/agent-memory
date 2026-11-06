@@ -1,0 +1,319 @@
+{
+ "now": "2026-10-20T12:00:00Z",
+ "projects": {
+  "beacon": {
+   "files": {
+    "pom.xml": "<project>\n  <parent><groupId>org.springframework.boot</groupId><artifactId>spring-boot-starter-parent</artifactId><version>3.2.4</version></parent>\n  <artifactId>beacon-api</artifactId>\n  <properties><java.version>21</java.version></properties>\n</project>\n",
+    "src/main/resources/application.yml": "spring:\n  datasource:\n    hikari:\n      maximum-pool-size: 10\n      connection-timeout: 30000\nserver:\n  tomcat:\n    threads:\n      max: 200\n",
+    "src/main/java/io/beacon/alerts/AlertService.java": "@Service\npublic class AlertService {\n    @Transactional\n    public void fanOut(long ruleId) { /* load rule, notify channels */ }\n}\n",
+    "src/main/java/io/beacon/web/RuleController.java": "@RestController\nclass RuleController { @GetMapping(\"/rules/{id}\") Rule get(@PathVariable long id) { return rules.findById(id).orElseThrow(); } }\n"
+   }
+  },
+  "beacon-batch": {
+   "files": {
+    "pom.xml": "<project>\n  <parent><groupId>org.springframework.boot</groupId><artifactId>spring-boot-starter-parent</artifactId><version>3.2.4</version></parent>\n  <artifactId>beacon-batch</artifactId>\n</project>\n",
+    "src/main/resources/application.yml": "spring:\n  datasource:\n    hikari:\n      maximum-pool-size: 4\n  batch:\n    job:\n      enabled: false\n",
+    "src/main/java/io/beacon/batch/RollupJob.java": "@Configuration\nclass RollupJob { @Bean Step rollupStep(JobRepository repo) { return new StepBuilder(\"rollup\", repo).chunk(500, tx).build(); } }\n"
+   }
+  }
+ },
+ "episodes": [
+  {
+   "id": "bc-001",
+   "project": "beacon",
+   "harness": "claude",
+   "age_days": 27,
+   "turns": [
+    {
+     "user": "API latency spikes to 30s at peak and then returns 500s"
+    },
+    {
+     "tool": {
+      "cmd": "curl -s localhost:8080/actuator/metrics/hikaricp.connections.pending",
+      "output": "{\"name\":\"hikaricp.connections.pending\",\"measurements\":[{\"statistic\":\"VALUE\",\"value\":187.0}]}",
+      "exit": 0
+     }
+    },
+    {
+     "tool": {
+      "cmd": "rg -n 'HikariPool-1 - Connection is not available' logs/beacon.log | head -2",
+      "output": "ERROR HikariPool-1 - Connection is not available, request timed out after 30000ms (total=10, active=10, idle=0, waiting=187)",
+      "exit": 0
+     }
+    },
+    {
+     "assistant": "fanOut() is @Transactional and calls the Slack webhook inside the transaction, so each request holds a connection for the HTTP round trip. 200 Tomcat threads against a pool of 10 starves. Move the notification outside the transaction; do not just raise the pool, Postgres has max_connections=100 shared with other services."
+    },
+    {
+     "tool": {
+      "cmd": "./mvnw -q test -Dtest=AlertServiceTest",
+      "output": "Tests run: 6, Failures: 0, Errors: 0",
+      "exit": 0
+     }
+    },
+    {
+     "assistant": "After moving the webhook call out of the transaction p99 went from 28 s to 640 ms under the k6 peak profile."
+    }
+   ]
+  },
+  {
+   "id": "bc-002",
+   "project": "beacon",
+   "harness": "codex",
+   "age_days": 56,
+   "turns": [
+    {
+     "user": "startup takes forever in CI, 48 seconds"
+    },
+    {
+     "tool": {
+      "cmd": "./mvnw spring-boot:run -Dspring-boot.run.arguments=--debug",
+      "output": "Started BeaconApplication in 47.9 seconds\nBean creation: JpaBaseConfiguration 31.2s (schema validation against remote db)",
+      "exit": 0
+     }
+    },
+    {
+     "assistant": "hibernate.ddl-auto=validate runs against the shared CI database and is slow over the VPN. Switch CI to the Testcontainers postgres:16 image."
+    },
+    {
+     "tool": {
+      "cmd": "./mvnw -q verify -Pci",
+      "output": "Started BeaconApplication in 9.4 seconds",
+      "exit": 0
+     }
+    }
+   ]
+  },
+  {
+   "id": "bc-003",
+   "project": "beacon",
+   "harness": "grok",
+   "age_days": 85,
+   "turns": [
+    {
+     "user": "java.lang.IllegalStateException: Failed to execute CommandLineRunner after bumping to boot 3.2"
+    },
+    {
+     "tool": {
+      "cmd": "./mvnw spring-boot:run",
+      "output": "Caused by: java.lang.NoSuchMethodError: 'void org.hibernate.engine.spi.SessionImplementor.doWork(org.hibernate.jdbc.Work)'\n  at com.vladmihalcea.hibernate.type.json.JsonType",
+      "exit": 1
+     }
+    },
+    {
+     "assistant": "hypersistence-utils for hibernate 6.2 is binary incompatible with 6.4 in boot 3.2. Need hypersistence-utils-hibernate-63 3.7.3."
+    },
+    {
+     "tool": {
+      "cmd": "./mvnw dependency:tree | rg hypersistence",
+      "output": "io.hypersistence:hypersistence-utils-hibernate-63:jar:3.7.3:compile",
+      "exit": 0
+     }
+    }
+   ]
+  },
+  {
+   "id": "bc-004",
+   "project": "beacon",
+   "harness": "muse",
+   "age_days": 14,
+   "turns": [
+    {
+     "user": "we are NOT going to virtual threads yet: spring.threads.virtual.enabled=true pinned carriers in the JDBC driver, k6 showed p99 at 1.9s versus 0.64s with platform threads, revisit when pgjdbc 42.8 ships"
+    }
+   ]
+  },
+  {
+   "id": "bb-001",
+   "project": "beacon-batch",
+   "harness": "codex",
+   "age_days": 38,
+   "turns": [
+    {
+     "user": "rollup job fails at night, Connection is not available"
+    },
+    {
+     "tool": {
+      "cmd": "rg -n 'HikariPool' logs/batch.log | head -2",
+      "output": "ERROR HikariPool-1 - Connection is not available, request timed out after 30000ms (total=4, active=4, idle=0, waiting=22)",
+      "exit": 0
+     }
+    },
+    {
+     "assistant": "The chunk step uses parallel partitions and each holds a connection while the reader streams a cursor. Pool of 4 is too small for 4 partitions plus the job repository. Raise to 8 and set partition count to 3."
+    },
+    {
+     "tool": {
+      "cmd": "./mvnw -q test -Dtest=RollupJobIT",
+      "output": "Tests run: 2, Failures: 0",
+      "exit": 0
+     }
+    }
+   ]
+  },
+  {
+   "id": "bc-005",
+   "project": "beacon",
+   "harness": "claude",
+   "age_days": 140,
+   "turns": [
+    {
+     "user": "hot reload doesn't pick up the template changes"
+    },
+    {
+     "tool": {
+      "cmd": "./mvnw dependency:tree | rg devtools",
+      "output": "org.springframework.boot:spring-boot-devtools:jar:3.2.4:runtime",
+      "exit": 0
+     }
+    },
+    {
+     "assistant": "IntelliJ needs 'Build project automatically' plus the registry key compiler.automake.allow.when.app.running enabled."
+    }
+   ]
+  }
+ ],
+ "memories": [
+  {
+   "id": "m-bc-pool",
+   "project": "beacon",
+   "age_days": 25,
+   "action": "Never call external webhooks inside a @Transactional method in AlertService; pool exhaustion follows. Keep hikari maximum-pool-size at 10 because Postgres max_connections is shared.",
+   "applicability": "Latency spikes or Hikari connection timeouts in the beacon API.",
+   "sources": [
+    {
+     "episode": "bc-001",
+     "contains": "starves"
+    }
+   ],
+   "validity": [
+    {
+     "path": "src/main/java/io/beacon/alerts/AlertService.java",
+     "contains": "@Transactional"
+    }
+   ]
+  }
+ ],
+ "mutations": [
+  {
+   "project": "beacon",
+   "path": "src/main/java/io/beacon/alerts/AlertService.java",
+   "content": "@Service\npublic class AlertService {\n    public void fanOut(long ruleId) {\n        Rule rule = tx.execute(s -> rules.load(ruleId));\n        channels.notifyAll(rule);\n    }\n}\n",
+   "commit": true
+  }
+ ],
+ "cases": [
+  {
+   "id": "bc-c1",
+   "split": "heldout-2",
+   "category": "stale_source",
+   "project": "beacon",
+   "query": "requests pile up waiting for a database connection at peak traffic",
+   "expect": "match",
+   "relevant": [
+    "bc-001"
+   ],
+   "stale_memories": [
+    "m-bc-pool"
+   ],
+   "forbidden": [
+    "bb-001"
+   ],
+   "misleading": [
+    "bc-002"
+   ]
+  },
+  {
+   "id": "bc-c2",
+   "split": "heldout-2",
+   "category": "paraphrase",
+   "project": "beacon",
+   "query": "service takes almost a minute to come up on the build agents",
+   "expect": "match",
+   "relevant": [
+    "bc-002"
+   ]
+  },
+  {
+   "id": "bc-c3",
+   "split": "heldout-2",
+   "category": "exact_identifier",
+   "project": "beacon",
+   "query": "NoSuchMethodError SessionImplementor.doWork",
+   "expect": "match",
+   "relevant": [
+    "bc-003"
+   ]
+  },
+  {
+   "id": "bc-c4",
+   "split": "heldout-2",
+   "category": "paraphrase",
+   "project": "beacon",
+   "query": "JSON column mapping library broke when the framework minor version went up",
+   "expect": "match",
+   "relevant": [
+    "bc-003"
+   ]
+  },
+  {
+   "id": "bc-c5",
+   "split": "heldout-2",
+   "category": "trajectory",
+   "project": "beacon",
+   "query": "enable lightweight threads to handle more concurrent requests",
+   "expect": "match",
+   "relevant": [
+    "bc-004"
+   ]
+  },
+  {
+   "id": "bb-c1",
+   "split": "heldout-2",
+   "category": "similar_project",
+   "project": "beacon-batch",
+   "query": "Hikari connection is not available request timed out",
+   "expect": "match",
+   "relevant": [
+    "bb-001"
+   ],
+   "forbidden": [
+    "bc-001",
+    "bc-005"
+   ]
+  },
+  {
+   "id": "bc-c6",
+   "split": "heldout-2",
+   "category": "similar_project",
+   "project": "beacon",
+   "query": "HikariPool-1 - Connection is not available, request timed out after 30000ms",
+   "expect": "match",
+   "relevant": [
+    "bc-001"
+   ],
+   "forbidden": [
+    "bb-001"
+   ]
+  },
+  {
+   "id": "bc-c7",
+   "split": "heldout-2",
+   "category": "negative",
+   "project": "beacon",
+   "query": "how are API keys rotated for the Slack integration",
+   "expect": "abstain",
+   "misleading": [
+    "bc-001"
+   ]
+  },
+  {
+   "id": "bc-c8",
+   "split": "heldout-2",
+   "category": "negative",
+   "project": "beacon",
+   "query": "GraalVM native image reflection config for RuleController",
+   "expect": "abstain"
+  }
+ ]
+}

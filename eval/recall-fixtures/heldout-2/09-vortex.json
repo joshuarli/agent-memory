@@ -1,0 +1,267 @@
+{
+ "now": "2026-10-20T12:00:00Z",
+ "projects": {
+  "vortex": {
+   "files": {
+    "CMakeLists.txt": "cmake_minimum_required(VERSION 3.25)\nproject(vortex CXX)\nset(CMAKE_CXX_STANDARD 20)\nadd_subdirectory(shaders)\nadd_executable(vortex src/main.cpp src/renderer.cpp)\ntarget_link_libraries(vortex PRIVATE glfw vulkan)\n",
+    "shaders/CMakeLists.txt": "find_program(GLSLC glslc REQUIRED)\nfile(GLOB SHADERS *.vert *.frag)\nforeach(S ${SHADERS})\n  add_custom_command(OUTPUT ${S}.spv COMMAND ${GLSLC} ${S} -o ${S}.spv DEPENDS ${S})\nendforeach()\n",
+    "src/renderer.cpp": "#include <vulkan/vulkan.h>\nvoid Renderer::createSwapchain() { /* VkSwapchainCreateInfoKHR */ }\n",
+    "shaders/mesh.vert": "#version 450\nlayout(location=0) in vec3 pos;\nvoid main() { gl_Position = vec4(pos, 1.0); }\n",
+    "CMakePresets.json": "{\"version\": 6, \"configurePresets\": [{\"name\": \"asan\", \"cacheVariables\": {\"CMAKE_CXX_FLAGS\": \"-fsanitize=address,undefined\"}}]}\n"
+   }
+  }
+ },
+ "episodes": [
+  {
+   "id": "vx-001",
+   "project": "vortex",
+   "harness": "claude",
+   "age_days": 29,
+   "turns": [
+    {
+     "user": "validation layer spam and then a crash when I resize the window"
+    },
+    {
+     "tool": {
+      "cmd": "./build/vortex",
+      "output": "VUID-VkSwapchainCreateInfoKHR-imageExtent-01274(ERROR / SPEC): msgNum: 1284057039 - vkCreateSwapchainKHR(): pCreateInfo->imageExtent (0, 0) is outside the surface capabilities\nSegmentation fault (core dumped)",
+      "exit": 139
+     }
+    },
+    {
+     "assistant": "A minimized window reports a 0x0 framebuffer; createSwapchain must wait on glfwWaitEvents while width or height is zero before recreating, and old swapchain must be passed as oldSwapchain."
+    },
+    {
+     "tool": {
+      "cmd": "cmake --build build -j8 && ./build/vortex --resize-test",
+      "output": "resize-test: 120 iterations, 0 validation errors",
+      "exit": 0
+     }
+    }
+   ]
+  },
+  {
+   "id": "vx-002",
+   "project": "vortex",
+   "harness": "codex",
+   "age_days": 50,
+   "turns": [
+    {
+     "user": "shaders aren't rebuilt when I edit a header included from the glsl"
+    },
+    {
+     "tool": {
+      "cmd": "touch shaders/common.glsl && cmake --build build",
+      "output": "ninja: no work to do.",
+      "exit": 0
+     }
+    },
+    {
+     "assistant": "add_custom_command only DEPENDS on the .vert/.frag. glslc can emit a depfile with -MD; use DEPFILE with the Ninja generator so includes are tracked."
+    },
+    {
+     "tool": {
+      "cmd": "cmake -S . -B build -G Ninja && touch shaders/common.glsl && cmake --build build",
+      "output": "[1/2] Compiling GLSL shaders/mesh.vert\n[2/2] Compiling GLSL shaders/lit.frag",
+      "exit": 0
+     }
+    }
+   ]
+  },
+  {
+   "id": "vx-003",
+   "project": "vortex",
+   "harness": "grok",
+   "age_days": 75,
+   "turns": [
+    {
+     "user": "run it with sanitizers to find the heap corruption"
+    },
+    {
+     "tool": {
+      "cmd": "cmake --preset asan && cmake --build build-asan && ./build-asan/vortex --scene sponza",
+      "output": "==4512==ERROR: AddressSanitizer: heap-buffer-overflow on address 0x60b000001a58\nWRITE of size 64 at 0x60b000001a58 thread T0\n    #0 0x55c1 in Renderer::uploadInstances src/renderer.cpp:204\n0x60b000001a58 is located 0 bytes after 1000-byte region",
+      "exit": 1
+     }
+    },
+    {
+     "assistant": "Instance buffer is sized with sizeof(Instance) * count where Instance was extended with a mat4 but the allocation uses the old 48-byte constant kInstanceStride. Replace the constant with sizeof."
+    },
+    {
+     "tool": {
+      "cmd": "cmake --build build-asan && ./build-asan/vortex --scene sponza --frames 600",
+      "output": "600 frames, no errors",
+      "exit": 0
+     }
+    }
+   ]
+  },
+  {
+   "id": "vx-004",
+   "project": "vortex",
+   "harness": "muse",
+   "age_days": 18,
+   "turns": [
+    {
+     "user": "we measured MSAA 4x vs FXAA on the integrated GPU: 8.9 ms vs 5.1 ms per frame at 1080p, deciding to ship FXAA by default and keep MSAA as an option for discrete GPUs"
+    },
+    {
+     "user": "also mesh shaders: the Vulkan extension is not supported on the CI gpu, so dropping that experiment"
+    }
+   ]
+  },
+  {
+   "id": "vx-005",
+   "project": "vortex",
+   "harness": "codex",
+   "age_days": 100,
+   "turns": [
+    {
+     "user": "link error after updating glfw"
+    },
+    {
+     "tool": {
+      "cmd": "cmake --build build",
+      "output": "ld: undefined symbols: _glfwCreateWindowSurface\nclang++: error: linker command failed with exit code 1",
+      "exit": 1
+     }
+    },
+    {
+     "assistant": "The homebrew glfw is built without Vulkan support. Install the MoltenVK loader and set GLFW_VULKAN_STATIC=OFF, link against vulkan loader dynamically."
+    }
+   ]
+  }
+ ],
+ "memories": [
+  {
+   "id": "m-vx-swap",
+   "project": "vortex",
+   "age_days": 27,
+   "action": "Pause swapchain recreation while the framebuffer is 0x0 (glfwWaitEvents loop) and pass the old swapchain as oldSwapchain.",
+   "applicability": "Resize or minimize crashes in Renderer::createSwapchain.",
+   "sources": [
+    {
+     "episode": "vx-001",
+     "contains": "glfwWaitEvents"
+    }
+   ],
+   "validity": [
+    {
+     "path": "src/renderer.cpp",
+     "contains": "createSwapchain"
+    }
+   ]
+  }
+ ],
+ "mutations": [],
+ "cases": [
+  {
+   "id": "vx-c1",
+   "split": "heldout-2",
+   "category": "paraphrase",
+   "project": "vortex",
+   "query": "dragging the window smaller than the minimum makes the graphics validation complain and the app dies",
+   "expect": "match",
+   "relevant": [
+    "vx-001"
+   ],
+   "valid_memories": [
+    "m-vx-swap"
+   ]
+  },
+  {
+   "id": "vx-c2",
+   "split": "heldout-2",
+   "category": "exact_identifier",
+   "project": "vortex",
+   "query": "VUID-VkSwapchainCreateInfoKHR-imageExtent-01274",
+   "expect": "match",
+   "relevant": [
+    "vx-001"
+   ]
+  },
+  {
+   "id": "vx-c3",
+   "split": "heldout-2",
+   "category": "paraphrase",
+   "project": "vortex",
+   "query": "changing an included file next to the GPU programs doesn't trigger a recompile",
+   "expect": "match",
+   "relevant": [
+    "vx-002"
+   ]
+  },
+  {
+   "id": "vx-c4",
+   "split": "heldout-2",
+   "category": "paraphrase",
+   "project": "vortex",
+   "query": "memory write past the end of a GPU upload array found with the checking tooling",
+   "expect": "match",
+   "relevant": [
+    "vx-003"
+   ]
+  },
+  {
+   "id": "vx-c5",
+   "split": "heldout-2",
+   "category": "trajectory",
+   "project": "vortex",
+   "query": "which anti-aliasing approach should be the default setting",
+   "expect": "match",
+   "relevant": [
+    "vx-004"
+   ]
+  },
+  {
+   "id": "vx-c6",
+   "split": "heldout-2",
+   "category": "path_symbol_command",
+   "project": "vortex",
+   "query": "cmake --preset asan",
+   "expect": "match",
+   "relevant": [
+    "vx-003"
+   ]
+  },
+  {
+   "id": "vx-c7",
+   "split": "heldout-2",
+   "category": "multi_record",
+   "project": "vortex",
+   "query": "make the debug workflow safe: resizing the window and memory errors in the renderer",
+   "expect": "match",
+   "required": [
+    [
+     "vx-001"
+    ],
+    [
+     "vx-003"
+    ]
+   ],
+   "relevant": [
+    "vx-001",
+    "vx-003"
+   ]
+  },
+  {
+   "id": "vx-c8",
+   "split": "heldout-2",
+   "category": "negative",
+   "project": "vortex",
+   "query": "ray tracing pipeline shader binding table alignment",
+   "expect": "abstain",
+   "misleading": [
+    "vx-004"
+   ]
+  },
+  {
+   "id": "vx-c9",
+   "split": "heldout-2",
+   "category": "negative",
+   "project": "vortex",
+   "query": "cross compile the engine for Windows with mingw",
+   "expect": "abstain"
+  }
+ ]
+}

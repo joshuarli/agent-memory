@@ -56,7 +56,24 @@
 
 ## Baseline
 
-(filled by M0 and M1)
+### M0 (2026-11-06, `94b28bd`, `--system new`, no haystack)
+
+| Split | Recall@5 | Paraphrase Recall@5 | After one retry | Correct abstention | Leakage, stale |
+| --- | --- | --- | --- | --- | --- |
+| dev (175 cases) | .65 | .16 (5/31) | .82 | .89 (.85 after retry) | 0, 0 |
+| heldout (141) | .68 | .19 (3/16) | .80 | 1.00 | 0, 0 |
+| heldout-2 (92) | .34 | .03 (1/29) | .72 | 1.00 | 0, 0 |
+
+`heldout-2` was written by an agent that did not read `src/agent_memory/` or any result. It has 12 projects, 54 episodes, 13 memories, 92 cases, of which 29 are paraphrase and 21 abstain.
+
+Paraphrase misses by the record kind that holds the evidence:
+
+| Split | Approved memory | Experience | Session events only |
+| --- | --- | --- | --- |
+| dev (26 misses) | 7 | 6 | 13 |
+| heldout (13 misses) | 5 | 1 | 7 |
+
+Half the misses have no compact record behind them, so a leg over compact records alone can recover at most the other half.
 
 ## Execution boundary and non-goals
 

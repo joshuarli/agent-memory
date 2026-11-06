@@ -1,0 +1,256 @@
+{
+ "now": "2026-10-20T12:00:00Z",
+ "projects": {
+  "nimbus": {
+   "files": {
+    "Package.swift": "// swift-tools-version:5.9\nimport PackageDescription\nlet package = Package(name: \"Nimbus\", platforms: [.iOS(.v16)], dependencies: [.package(url: \"https://github.com/apple/swift-collections\", from: \"1.0.5\")], targets: [.target(name: \"NimbusKit\")])\n",
+    "Sources/NimbusKit/PhotoStore.swift": "actor PhotoStore {\n    private var cache: [UUID: Data] = [:]\n    func data(for id: UUID) -> Data? { cache[id] }\n}\n",
+    "Sources/NimbusKit/SyncCoordinator.swift": "@MainActor final class SyncCoordinator: ObservableObject {\n    @Published var state: SyncState = .idle\n}\n",
+    "fastlane/Fastfile": "lane :beta do\n  build_app(scheme: \"Nimbus\")\n  upload_to_testflight\nend\n"
+   }
+  }
+ },
+ "episodes": [
+  {
+   "id": "nb-001",
+   "project": "nimbus",
+   "harness": "claude",
+   "age_days": 36,
+   "turns": [
+    {
+     "user": "Xcode Cloud archive fails but it builds locally"
+    },
+    {
+     "tool": {
+      "cmd": "xcodebuild -scheme Nimbus -destination 'generic/platform=iOS' archive",
+      "output": "error: Provisioning profile \"Nimbus AppStore\" doesn't include the com.apple.developer.associated-domains entitlement.\n** ARCHIVE FAILED **",
+      "exit": 65
+     }
+    },
+    {
+     "assistant": "The Associated Domains capability was added to the target after the profile was generated. Regenerate the App Store profile in the developer portal, then re-sync in Xcode Cloud."
+    },
+    {
+     "user": "No, don't switch the project to automatic signing to get around it. Release signing stays manual so the profile is pinned."
+    },
+    {
+     "tool": {
+      "cmd": "fastlane match appstore --force_for_new_devices",
+      "output": "Successfully installed provisioning profile 'match AppStore com.nimbus.app'",
+      "exit": 0
+     }
+    },
+    {
+     "tool": {
+      "cmd": "xcodebuild -scheme Nimbus -destination 'generic/platform=iOS' archive",
+      "output": "** ARCHIVE SUCCEEDED **",
+      "exit": 0
+     }
+    }
+   ]
+  },
+  {
+   "id": "nb-002",
+   "project": "nimbus",
+   "harness": "codex",
+   "age_days": 22,
+   "turns": [
+    {
+     "user": "Swift 6 mode gives me tons of concurrency warnings in SyncCoordinator"
+    },
+    {
+     "tool": {
+      "cmd": "xcodebuild -scheme Nimbus build SWIFT_STRICT_CONCURRENCY=complete",
+      "output": "SyncCoordinator.swift:41:23: error: sending 'payload' risks causing data races\nnote: 'payload' is passed as a 'sending' parameter; Uses in callee may race with later uses in caller",
+      "exit": 65
+     }
+    },
+    {
+     "assistant": "The payload struct holds a non-Sendable NSDictionary. Converting it to a Codable struct and marking it Sendable fixes the diagnostic without @unchecked."
+    },
+    {
+     "tool": {
+      "cmd": "xcodebuild -scheme Nimbus build SWIFT_STRICT_CONCURRENCY=complete",
+      "output": "** BUILD SUCCEEDED **",
+      "exit": 0
+     }
+    }
+   ]
+  },
+  {
+   "id": "nb-003",
+   "project": "nimbus",
+   "harness": "grok",
+   "age_days": 60,
+   "turns": [
+    {
+     "user": "thumbnails scroll janky in the grid, profile it"
+    },
+    {
+     "tool": {
+      "cmd": "xcrun xctrace record --template 'Time Profiler' --launch Nimbus.app --time-limit 20s",
+      "output": "Hot path: UIImage(data:) 38.4% main thread; PhotoStore.data(for:) 12.1%",
+      "exit": 0
+     }
+    },
+    {
+     "assistant": "Decoding full-size JPEGs on the main thread. Use CGImageSourceCreateThumbnailAtIndex with kCGImageSourceThumbnailMaxPixelSize=300 on a background task."
+    },
+    {
+     "tool": {
+      "cmd": "xcrun xctrace record --template 'Animation Hitches' --launch Nimbus.app --time-limit 20s",
+      "output": "Hitch rate: 14.2 ms/s before, 2.1 ms/s after",
+      "exit": 0
+     }
+    }
+   ]
+  },
+  {
+   "id": "nb-004",
+   "project": "nimbus",
+   "harness": "muse",
+   "age_days": 12,
+   "turns": [
+    {
+     "user": "what was the reason we stayed on SwiftData off for the first release? I forget"
+    },
+    {
+     "user": "ok found it in my notes: CloudKit sync with SwiftData lost relationships in beta 3, so we are staying on Core Data for 1.0"
+    }
+   ]
+  },
+  {
+   "id": "nb-005",
+   "project": "nimbus",
+   "harness": "codex",
+   "age_days": 150,
+   "turns": [
+    {
+     "user": "TestFlight upload rejected"
+    },
+    {
+     "tool": {
+      "cmd": "fastlane beta",
+      "output": "ERROR ITMS-90725: SDK Version Issue. This app was built with the iOS 16.4 SDK. Starting April 29 2025, all iOS apps must be built with the iOS 18 SDK or later.\nfastlane finished with a failure",
+      "exit": 1
+     }
+    },
+    {
+     "assistant": "CI runner image still has Xcode 14.3. Bump the runner to Xcode 16 in the pipeline; the deployment target stays iOS 16."
+    }
+   ]
+  }
+ ],
+ "memories": [
+  {
+   "id": "m-nb-sign",
+   "project": "nimbus",
+   "age_days": 34,
+   "action": "Release signing is manual with match-managed profiles; after adding a capability regenerate the AppStore profile via fastlane match. Do not turn on automatic signing.",
+   "applicability": "Archive or upload failures about provisioning profiles or entitlements.",
+   "sources": [
+    {
+     "episode": "nb-001",
+     "contains": "pinned"
+    }
+   ],
+   "validity": [
+    {
+     "path": "fastlane/Fastfile",
+     "contains": "build_app"
+    }
+   ]
+  }
+ ],
+ "mutations": [],
+ "cases": [
+  {
+   "id": "nb-c1",
+   "split": "heldout-2",
+   "category": "paraphrase",
+   "project": "nimbus",
+   "query": "distribution build fails because the signing certificate bundle lacks a capability we just enabled",
+   "expect": "match",
+   "relevant": [
+    "nb-001"
+   ],
+   "valid_memories": [
+    "m-nb-sign"
+   ]
+  },
+  {
+   "id": "nb-c2",
+   "split": "heldout-2",
+   "category": "paraphrase",
+   "project": "nimbus",
+   "query": "strict mode complains about values crossing thread boundaries in the syncing class",
+   "expect": "match",
+   "relevant": [
+    "nb-002"
+   ]
+  },
+  {
+   "id": "nb-c3",
+   "split": "heldout-2",
+   "category": "paraphrase",
+   "project": "nimbus",
+   "query": "scrolling through the photo grid stutters",
+   "expect": "match",
+   "relevant": [
+    "nb-003"
+   ]
+  },
+  {
+   "id": "nb-c4",
+   "split": "heldout-2",
+   "category": "trajectory",
+   "project": "nimbus",
+   "query": "adopt the new declarative persistence framework for the first release",
+   "expect": "match",
+   "relevant": [
+    "nb-004"
+   ]
+  },
+  {
+   "id": "nb-c5",
+   "split": "heldout-2",
+   "category": "exact_identifier",
+   "project": "nimbus",
+   "query": "ITMS-90725",
+   "expect": "match",
+   "relevant": [
+    "nb-005"
+   ]
+  },
+  {
+   "id": "nb-c6",
+   "split": "heldout-2",
+   "category": "short_identifier",
+   "project": "nimbus",
+   "query": "ITMS",
+   "expect": "match",
+   "relevant": [
+    "nb-005"
+   ]
+  },
+  {
+   "id": "nb-c7",
+   "split": "heldout-2",
+   "category": "negative",
+   "project": "nimbus",
+   "query": "push notification payload with mutable-content for the rich media extension",
+   "expect": "abstain"
+  },
+  {
+   "id": "nb-c8",
+   "split": "heldout-2",
+   "category": "negative",
+   "project": "nimbus",
+   "query": "App Clips size limit for the invocation card",
+   "expect": "abstain",
+   "misleading": [
+    "nb-001"
+   ]
+  }
+ ]
+}

@@ -1,0 +1,328 @@
+{
+ "now": "2026-10-20T12:00:00Z",
+ "projects": {
+  "pylon": {
+   "files": {
+    "mix.exs": "defmodule Pylon.MixProject do\n  use Mix.Project\n  def project, do: [app: :pylon, version: \"0.9.2\", deps: deps()]\n  defp deps, do: [{:phoenix, \"~> 1.7.10\"}, {:phoenix_live_view, \"~> 0.20.1\"}, {:oban, \"~> 2.17\"}, {:ecto_sql, \"~> 3.11\"}]\nend\n",
+    "config/runtime.exs": "import Config\nconfig :pylon, Pylon.Repo, pool_size: String.to_integer(System.get_env(\"POOL_SIZE\") || \"10\")\nconfig :pylon, Oban, queues: [default: 10, mailers: 5]\n",
+    "lib/pylon_web/live/board_live.ex": "defmodule PylonWeb.BoardLive do\n  use PylonWeb, :live_view\n  def mount(_params, _session, socket), do: {:ok, assign(socket, :cards, [])}\nend\n",
+    "lib/pylon/workers/digest_worker.ex": "defmodule Pylon.Workers.DigestWorker do\n  use Oban.Worker, queue: :mailers, max_attempts: 3\n  def perform(%Oban.Job{args: %{\"user_id\" => id}}), do: Pylon.Digest.send(id)\nend\n"
+   },
+   "worktrees": {
+    "streams-refactor": {
+     "files": {
+      "lib/pylon_web/live/board_live.ex": "defmodule PylonWeb.BoardLive do\n  use PylonWeb, :live_view\n  def mount(_params, _session, socket), do: {:ok, stream(socket, :cards, [])}\nend\n"
+     }
+    }
+   }
+  }
+ },
+ "episodes": [
+  {
+   "id": "py-001",
+   "project": "pylon",
+   "harness": "claude",
+   "age_days": 33,
+   "turns": [
+    {
+     "user": "board page memory climbs forever while people keep it open, ~2GB after a day"
+    },
+    {
+     "tool": {
+      "cmd": "mix run -e 'IO.inspect(:erlang.memory(:total))' && :observer_cli",
+      "output": "** (Mix) Could not start application observer_cli",
+      "exit": 1
+     }
+    },
+    {
+     "tool": {
+      "cmd": "iex -S mix phx.server",
+      "output": "[info] CONNECTED TO Phoenix.LiveView.Socket in 41us\n[info] Phoenix.LiveView.Channel pid=#PID<0.2345.0> heap_size=48000000",
+      "exit": 0
+     }
+    },
+    {
+     "assistant": "Every LiveView process holds the full cards list in assigns, and each broadcast appends to it. 40k cards means the per-socket heap is tens of MB multiplied by connected users. Switching the assign to a stream so the server does not retain rendered items."
+    },
+    {
+     "tool": {
+      "cmd": "mix test test/pylon_web/live/board_live_test.exs",
+      "output": "..\nFinished in 0.4 seconds\n2 tests, 0 failures",
+      "exit": 0
+     }
+    },
+    {
+     "assistant": "Process heap per board socket dropped from 48 MB to about 1.2 MB in the iex check after moving to stream(socket, :cards, ...)."
+    }
+   ]
+  },
+  {
+   "id": "py-002",
+   "project": "pylon",
+   "harness": "codex",
+   "age_days": 52,
+   "turns": [
+    {
+     "user": "the weekly digest emails went out three times to some people"
+    },
+    {
+     "tool": {
+      "cmd": "psql $DATABASE_URL -c \"select id, state, attempt from oban_jobs where worker like '%DigestWorker' order by id desc limit 5\"",
+      "output": " id  | state     | attempt\n-----+-----------+--------\n 981 | completed |       1\n 980 | retryable |       2\n 979 | completed |       3",
+      "exit": 0
+     }
+    },
+    {
+     "assistant": "perform/1 sends the mail and then writes the sent_at marker; when the marker write times out Oban retries and the email goes again. The worker is not idempotent. Use unique: [period: 3600, keys: [:user_id]] and write the marker first."
+    },
+    {
+     "user": "Not unique: [period: :infinity]; that would silently drop next week's digest. One hour is right."
+    },
+    {
+     "tool": {
+      "cmd": "mix test test/pylon/workers/digest_worker_test.exs",
+      "output": "Finished in 0.9 seconds\n3 tests, 0 failures",
+      "exit": 0
+     }
+    }
+   ]
+  },
+  {
+   "id": "py-003",
+   "project": "pylon",
+   "harness": "grok",
+   "age_days": 80,
+   "turns": [
+    {
+     "user": "DBConnection.ConnectionError: tcp recv: closed shows up in the logs every night around 3am"
+    },
+    {
+     "tool": {
+      "cmd": "rg -n 'idle_timeout|pool_size' config/",
+      "output": "config/runtime.exs:2:config :pylon, Pylon.Repo, pool_size: String.to_integer(System.get_env(\"POOL_SIZE\") || \"10\")",
+      "exit": 0
+     }
+    },
+    {
+     "tool": {
+      "cmd": "heroku pg:diagnose --app pylon-prod",
+      "output": "RED: Connection count 94/120 over last 24h; pgbouncer server_idle_timeout 600s",
+      "exit": 0
+     }
+    },
+    {
+     "assistant": "The nightly maintenance window restarts the primary and pgbouncer drops idle server connections after 600 seconds. Ecto holds them open longer than that. Setting queue_target: 500 and idle_interval: 60_000 makes the pool ping before they go stale."
+    },
+    {
+     "tool": {
+      "cmd": "grep -n idle_interval config/runtime.exs",
+      "output": "3:  idle_interval: 60_000, queue_target: 500,",
+      "exit": 0
+     }
+    }
+   ]
+  },
+  {
+   "id": "py-004",
+   "project": "pylon",
+   "harness": "muse",
+   "age_days": 20,
+   "turns": [
+    {
+     "user": "I want to try replacing Oban with Broadway for the digest pipeline, it should be faster"
+    },
+    {
+     "user": "nope, benchmarked it: Broadway 1,950 msg/s versus Oban 2,010 jobs/s on the same box, and we lose the retry dashboard. dropping the idea"
+    }
+   ]
+  },
+  {
+   "id": "py-005",
+   "project": "pylon",
+   "harness": "codex",
+   "age_days": 12,
+   "worktree": "streams-refactor",
+   "turns": [
+    {
+     "user": "start working on the board stream refactor in the worktree"
+    },
+    {
+     "tool": {
+      "cmd": "mix compile --warnings-as-errors",
+      "output": "warning: Phoenix.LiveView.stream/3 is not defined for socket assigns :cards used in render/1\nCompilation failed due to warnings",
+      "exit": 1
+     }
+    },
+    {
+     "assistant": "render/1 still iterates @cards; with streams the template must loop over @streams.cards with phx-update=stream on the container and an id on each child."
+    },
+    {
+     "tool": {
+      "cmd": "mix compile --warnings-as-errors",
+      "output": "Generated pylon app",
+      "exit": 0
+     }
+    }
+   ]
+  }
+ ],
+ "memories": [
+  {
+   "id": "m-py-digest",
+   "project": "pylon",
+   "age_days": 50,
+   "action": "DigestWorker must stay idempotent: write the sent marker before mailing and keep unique: [period: 3600, keys: [:user_id]]. Never use an infinite uniqueness period.",
+   "applicability": "Changing or debugging Pylon.Workers.DigestWorker or duplicate digest emails.",
+   "sources": [
+    {
+     "episode": "py-002",
+     "contains": "period: :infinity"
+    }
+   ],
+   "validity": [
+    {
+     "path": "lib/pylon/workers/digest_worker.ex",
+     "contains": "max_attempts: 3"
+    }
+   ]
+  },
+  {
+   "id": "m-py-stream",
+   "project": "pylon",
+   "age_days": 30,
+   "action": "Board assigns hold unbounded card lists in every LiveView process; use stream/3 and @streams.cards instead of assigning the full list.",
+   "applicability": "Editing PylonWeb.BoardLive or any LiveView that renders the card list.",
+   "sources": [
+    {
+     "episode": "py-001",
+     "contains": "stream(socket, :cards"
+    }
+   ],
+   "validity": [
+    {
+     "path": "lib/pylon_web/live/board_live.ex",
+     "contains": "stream(socket"
+    }
+   ]
+  }
+ ],
+ "mutations": [],
+ "cases": [
+  {
+   "id": "py-c1",
+   "split": "heldout-2",
+   "category": "paraphrase",
+   "project": "pylon",
+   "query": "browser tab left open on the kanban view makes the server process balloon in size over a day",
+   "expect": "match",
+   "relevant": [
+    "py-001"
+   ],
+   "valid_memories": [
+    "m-py-stream"
+   ]
+  },
+  {
+   "id": "py-c2",
+   "split": "heldout-2",
+   "category": "paraphrase",
+   "project": "pylon",
+   "query": "subscribers got the same newsletter several times after a failure in the background task",
+   "expect": "match",
+   "relevant": [
+    "py-002"
+   ],
+   "valid_memories": [
+    "m-py-digest"
+   ]
+  },
+  {
+   "id": "py-c3",
+   "split": "heldout-2",
+   "category": "exact_identifier",
+   "project": "pylon",
+   "query": "DBConnection.ConnectionError tcp recv closed",
+   "expect": "match",
+   "relevant": [
+    "py-003"
+   ]
+  },
+  {
+   "id": "py-c4",
+   "split": "heldout-2",
+   "category": "paraphrase",
+   "project": "pylon",
+   "query": "database drops us every night while the primary is being restarted; how did we make the pool survive it",
+   "expect": "match",
+   "relevant": [
+    "py-003"
+   ]
+  },
+  {
+   "id": "py-c5",
+   "split": "heldout-2",
+   "category": "trajectory",
+   "project": "pylon",
+   "query": "should the background job library be swapped for a streaming pipeline library for throughput",
+   "expect": "match",
+   "relevant": [
+    "py-004"
+   ],
+   "misleading": [
+    "py-002"
+   ]
+  },
+  {
+   "id": "py-c6",
+   "split": "heldout-2",
+   "category": "worktree",
+   "project": "pylon",
+   "query": "board cards list rendering in the stream refactor",
+   "expect": "match",
+   "worktree": "streams-refactor",
+   "relevant": [
+    "py-001",
+    "py-005"
+   ],
+   "valid_memories": [
+    "m-py-stream"
+   ]
+  },
+  {
+   "id": "py-c7",
+   "split": "heldout-2",
+   "category": "negative",
+   "project": "pylon",
+   "query": "how are Phoenix channel presence diffs throttled for large rooms",
+   "expect": "abstain"
+  },
+  {
+   "id": "py-c8",
+   "split": "heldout-2",
+   "category": "negative",
+   "project": "pylon",
+   "query": "Oban cron schedule for the weekly digest runs on the wrong timezone",
+   "expect": "abstain",
+   "misleading": [
+    "py-002"
+   ]
+  },
+  {
+   "id": "py-c9",
+   "split": "heldout-2",
+   "category": "contradiction",
+   "project": "pylon",
+   "query": "should digest job uniqueness be infinite to avoid duplicates",
+   "expect": "match",
+   "relevant": [
+    "py-002"
+   ],
+   "valid_memories": [
+    "m-py-digest"
+   ],
+   "misleading": [
+    "py-004"
+   ]
+  }
+ ]
+}

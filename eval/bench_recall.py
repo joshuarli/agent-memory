@@ -20,7 +20,7 @@ ROOT = Path(__file__).resolve().parents[1]
 SRC_DIR = ROOT / "src"
 FIXTURES = ROOT / "eval" / "recall-fixtures"
 WORK_TMP = ROOT / ".work" / "tmp"
-SPLITS = ("dev", "heldout")
+SPLITS = ("dev", "heldout", "heldout-2")
 HARNESSES = ("codex", "claude", "muse", "grok")
 CATEGORIES = (
     "exact_identifier", "paraphrase", "path_symbol_command", "short_identifier", "trajectory",

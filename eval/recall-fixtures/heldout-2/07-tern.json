@@ -1,0 +1,275 @@
+{
+ "now": "2026-10-20T12:00:00Z",
+ "projects": {
+  "tern": {
+   "files": {
+    "schema/001_init.sql": "CREATE TABLE events (id bigserial PRIMARY KEY, tenant_id int NOT NULL, kind text NOT NULL, payload jsonb NOT NULL, created_at timestamptz NOT NULL DEFAULT now());\nCREATE INDEX events_tenant_idx ON events (tenant_id);\n",
+    "schema/002_rollups.sql": "CREATE MATERIALIZED VIEW daily_rollup AS SELECT tenant_id, date_trunc('day', created_at) AS day, count(*) FROM events GROUP BY 1, 2;\n",
+    "pgbouncer/pgbouncer.ini": "[pgbouncer]\npool_mode = transaction\nmax_client_conn = 800\ndefault_pool_size = 20\n",
+    "scripts/vacuum_report.sh": "#!/bin/sh\npsql \"$DATABASE_URL\" -c \"select relname, n_dead_tup from pg_stat_user_tables order by 2 desc limit 10\"\n",
+    "Makefile": "migrate:\n\tsqitch deploy\n"
+   }
+  }
+ },
+ "episodes": [
+  {
+   "id": "tn-001",
+   "project": "tern",
+   "harness": "codex",
+   "age_days": 42,
+   "turns": [
+    {
+     "user": "prepared statement \"S_1\" already exists errors since we put pgbouncer in front"
+    },
+    {
+     "tool": {
+      "cmd": "psql \"$PGBOUNCER_URL\" -c 'select 1'",
+      "output": "ERROR:  prepared statement \"S_1\" already exists",
+      "exit": 1
+     }
+    },
+    {
+     "assistant": "pool_mode=transaction hands different server connections to the same client, so protocol-level named prepared statements collide. The app driver must disable them (prepareThreshold=0 for pgjdbc, prepared_statements: false for Rails) -- or use pgbouncer 1.21+ with max_prepared_statements."
+    },
+    {
+     "user": "We are on 1.18, can't upgrade this quarter. Keep transaction mode and turn prepared statements off in the clients."
+    },
+    {
+     "tool": {
+      "cmd": "DATABASE_URL='postgres://tern@bouncer/tern?prepareThreshold=0' ./scripts/smoke.sh",
+      "output": "ok: 25/25 queries",
+      "exit": 0
+     }
+    }
+   ]
+  },
+  {
+   "id": "tn-002",
+   "project": "tern",
+   "harness": "claude",
+   "age_days": 22,
+   "turns": [
+    {
+     "user": "the daily dashboard query got slow, 14 seconds"
+    },
+    {
+     "tool": {
+      "cmd": "psql $DATABASE_URL -c \"explain (analyze, buffers) select * from events where tenant_id = 42 and created_at > now() - interval '1 day'\"",
+      "output": "Index Scan using events_tenant_idx on events  (cost=0.57..912344.21 rows=48211 width=96) (actual time=0.9..13688.4 rows=51233 loops=1)\n  Filter: (created_at > (now() - '1 day'::interval))\n  Rows Removed by Filter: 9840112\nExecution Time: 13702.114 ms",
+      "exit": 0
+     }
+    },
+    {
+     "assistant": "Index on tenant_id alone scans every row for the tenant and filters by date. Composite index (tenant_id, created_at) lets it range scan."
+    },
+    {
+     "tool": {
+      "cmd": "psql $DATABASE_URL -c 'create index concurrently events_tenant_created_idx on events (tenant_id, created_at)'",
+      "output": "CREATE INDEX",
+      "exit": 0
+     }
+    },
+    {
+     "tool": {
+      "cmd": "psql $DATABASE_URL -c \"explain (analyze) select * from events where tenant_id = 42 and created_at > now() - interval '1 day'\"",
+      "output": "Index Scan using events_tenant_created_idx ... Execution Time: 37.882 ms",
+      "exit": 0
+     }
+    }
+   ]
+  },
+  {
+   "id": "tn-003",
+   "project": "tern",
+   "harness": "grok",
+   "age_days": 70,
+   "turns": [
+    {
+     "user": "disk is 91% full on the primary but the table is only 40GB"
+    },
+    {
+     "tool": {
+      "cmd": "sh scripts/vacuum_report.sh",
+      "output": " relname | n_dead_tup\n events  | 118203311",
+      "exit": 0
+     }
+    },
+    {
+     "assistant": "Autovacuum cannot keep up: 118M dead tuples because a stale replication slot (analytics_slot) pins the xmin horizon. Drop the abandoned slot, then VACUUM."
+    },
+    {
+     "tool": {
+      "cmd": "psql $DATABASE_URL -c \"select pg_drop_replication_slot('analytics_slot')\" && psql $DATABASE_URL -c 'VACUUM (VERBOSE) events'",
+      "output": " pg_drop_replication_slot\n\nINFO: table \"events\": removed 118203311 dead item identifiers",
+      "exit": 0
+     }
+    }
+   ]
+  },
+  {
+   "id": "tn-004",
+   "project": "tern",
+   "harness": "muse",
+   "age_days": 30,
+   "turns": [
+    {
+     "user": "partitioning the events table by month: tried it on staging, planning got slower with 400 partitions (4ms to 31ms) and the dashboard did not improve, so we are not doing it. index fix was enough"
+    }
+   ]
+  },
+  {
+   "id": "tn-005",
+   "project": "tern",
+   "harness": "codex",
+   "age_days": 110,
+   "turns": [
+    {
+     "user": "REFRESH MATERIALIZED VIEW daily_rollup blocks readers during the night job"
+    },
+    {
+     "tool": {
+      "cmd": "psql $DATABASE_URL -c 'REFRESH MATERIALIZED VIEW daily_rollup'",
+      "output": "REFRESH MATERIALIZED VIEW (took 4m 12s, ACCESS EXCLUSIVE lock held)",
+      "exit": 0
+     }
+    },
+    {
+     "assistant": "CONCURRENTLY needs a unique index on the view. Added create unique index daily_rollup_pk on daily_rollup (tenant_id, day)."
+    },
+    {
+     "tool": {
+      "cmd": "psql $DATABASE_URL -c 'REFRESH MATERIALIZED VIEW CONCURRENTLY daily_rollup'",
+      "output": "REFRESH MATERIALIZED VIEW",
+      "exit": 0
+     }
+    }
+   ]
+  }
+ ],
+ "memories": [
+  {
+   "id": "m-tn-bouncer",
+   "project": "tern",
+   "age_days": 40,
+   "action": "Clients behind pgbouncer in transaction mode must disable named prepared statements (prepareThreshold=0); do not switch to session pooling. Pgbouncer 1.18 cannot proxy them.",
+   "applicability": "Prepared statement already exists errors or changing pool_mode in tern.",
+   "sources": [
+    {
+     "episode": "tn-001",
+     "contains": "1.18"
+    }
+   ],
+   "validity": [
+    {
+     "path": "pgbouncer/pgbouncer.ini",
+     "contains": "pool_mode = transaction"
+    }
+   ]
+  }
+ ],
+ "mutations": [],
+ "cases": [
+  {
+   "id": "tn-c1",
+   "split": "heldout-2",
+   "category": "paraphrase",
+   "project": "tern",
+   "query": "after adding the connection proxy every client throws a complaint that a cached query plan name is taken",
+   "expect": "match",
+   "relevant": [
+    "tn-001"
+   ],
+   "valid_memories": [
+    "m-tn-bouncer"
+   ]
+  },
+  {
+   "id": "tn-c2",
+   "split": "heldout-2",
+   "category": "paraphrase",
+   "project": "tern",
+   "query": "dashboard for one customer takes many seconds although there is an index on the customer column",
+   "expect": "match",
+   "relevant": [
+    "tn-002"
+   ]
+  },
+  {
+   "id": "tn-c3",
+   "split": "heldout-2",
+   "category": "paraphrase",
+   "project": "tern",
+   "query": "the primary's storage keeps filling with bloat and cleanup does not help",
+   "expect": "match",
+   "relevant": [
+    "tn-003"
+   ]
+  },
+  {
+   "id": "tn-c4",
+   "split": "heldout-2",
+   "category": "trajectory",
+   "project": "tern",
+   "query": "split the big events table into monthly child tables",
+   "expect": "match",
+   "relevant": [
+    "tn-004"
+   ]
+  },
+  {
+   "id": "tn-c5",
+   "split": "heldout-2",
+   "category": "path_symbol_command",
+   "project": "tern",
+   "query": "REFRESH MATERIALIZED VIEW CONCURRENTLY daily_rollup",
+   "expect": "match",
+   "relevant": [
+    "tn-005"
+   ]
+  },
+  {
+   "id": "tn-c6",
+   "split": "heldout-2",
+   "category": "path_symbol_command",
+   "project": "tern",
+   "query": "scripts/vacuum_report.sh",
+   "expect": "match",
+   "relevant": [
+    "tn-003"
+   ]
+  },
+  {
+   "id": "tn-c7",
+   "split": "heldout-2",
+   "category": "negative",
+   "project": "tern",
+   "query": "logical replication to the analytics warehouse lags behind by hours",
+   "expect": "abstain",
+   "misleading": [
+    "tn-003"
+   ]
+  },
+  {
+   "id": "tn-c8",
+   "split": "heldout-2",
+   "category": "negative",
+   "project": "tern",
+   "query": "pg_partman retention policy for old partitions",
+   "expect": "abstain",
+   "misleading": [
+    "tn-004"
+   ]
+  },
+  {
+   "id": "tn-c9",
+   "split": "heldout-2",
+   "category": "short_identifier",
+   "project": "tern",
+   "query": "xmin",
+   "expect": "match",
+   "relevant": [
+    "tn-003"
+   ]
+  }
+ ]
+}
