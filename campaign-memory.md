@@ -4,8 +4,8 @@
 
 - **Goal:** Recall reaches agents without them choosing to call it, and recall finds paraphrased experience without an agent-written retry, without losing exact-identifier lookup, correct abstention, or the authority and source-verification guarantees.
 - **Base revision:** `3ba4a00`.
-- **Accepted:** none. **Red:** none. **Parked:** none.
-- **Next slice:** M0.
+- **Accepted:** M0 (`83d3745`), M1, M2 (`5430904`), M3 (usr `aba8c54`). **Red:** none. **Parked:** none.
+- **Next slice:** M4.
 
 ## Charter
 
@@ -33,7 +33,7 @@
 | --- | --- | --- |
 | P1 | `heldout-2` is written once, before any tuning, and frozen. Every acceptance number for the semantic leg comes from it. `dev` stays the tuning split; `heldout` is reported but no longer counts as independent. | `heldout` results have been read repeatedly, and it has only 16 paraphrase cases. |
 | P2 | The opportunity replay and as-of filtering live in `eval/`, not in the product. | It is a measurement, not a feature. |
-| P3 | The prompt hook never indexes, never calls a model, and fails open with `{}` under a hard deadline. It injects only non-abstaining results, at most 3 records and 600 characters, and never repeats a reference already shown in that session. It fires only for projects with observation on. | Hooks run on every prompt; the existing abstention gate is the relevance filter. |
+| P3 | The prompt hook never indexes, never calls a model, and fails open with `{}` under a 2 s deadline. It runs once per session, on the first task prompt, and records the attempt. It injects only non-abstaining results, at most 3 lines and 600 characters, and drops user-turn leads that echo the prompt. It fires only in projects whose experience is captured (observation, a project grant, or the wildcard). | Hooks run on every prompt; the existing abstention gate is the relevance filter. M1 measured opening prompts, so once per session is the measured behavior. No project had observation on; captured experience comes from review grants. |
 | P4 | Injected text goes into the user turn (Claude Code `additionalContext`), never the system prompt. Receipts carry `source: "hook"`. | Keeps the prompt cache intact and makes hook-sourced recall measurable through the existing follow-through. |
 | P5 | Vectors are a derived index: one table keyed by model id and content digest, float32 via `array`, rebuilt by `reindex`, removed on `forget` and tombstone, excluded from backup and mirror. | Rebuildable from canonical records; no new durable contract. |
 | P6 | The semantic leg covers compact records only (approved memories and experiences), not raw session events. It adds candidates through reciprocal rank fusion; the existing relevance gate, authority classification, and source-condition checks decide what is returned. | Exact lookups stay deterministic; semantics only add candidates. |
@@ -74,6 +74,17 @@ Paraphrase misses by the record kind that holds the evidence:
 | heldout (13 misses) | 5 | 1 | 7 |
 
 Half the misses have no compact record behind them, so a leg over compact records alone can recover at most the other half.
+
+### M1 (2026-11-06, snapshot of the real `~/.agent-sessions`: 2,674 sessions, 2.0 M events, 1,037 retained experiences, 0 approved memories)
+
+`eval/replay_recall.py` replays each top-level session's first task prompt through recall as of that session's start (no records observed later, no sessions updated later). A sampled relevance judge (a separate agent, 60 hits per run) labeled what would have been shown.
+
+| Run | Task prompts | Non-abstaining | Relevant / marginal / irrelevant in sample | Echoes in sample | Median, p95 |
+| --- | --- | --- | --- | --- | --- |
+| Plain recall | 739 | 410 (55%) | 14 / 37 / 9 | 33 | 665 ms, 1.31 s |
+| Hook rendering (echoes dropped, instruction-file prompts skipped) | 732 | 213 (29%); 155 more were echo-only | 34 / 21 / 5 | 2 | 519 ms, 1.20 s |
+
+Agents called recall themselves in 51 of 988 sessions. With hook rendering, about 17% of task prompts would get a relevant injection and about 2% an irrelevant one. Results are mostly event leads (402 of 427 lines); experiences are 25. The host was busy throughout, so the latencies come from a run that overlapped other load and are not perf-gated.
 
 ## Execution boundary and non-goals
 
