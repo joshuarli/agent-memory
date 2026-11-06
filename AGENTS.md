@@ -5,6 +5,7 @@ Local agent session memory (`src/agent_memory`) and its Cloudflare Worker (`clou
 ## Rules
 
 - The Python package uses only the standard library and requires Python 3.15. Build-only tooling stays in `[build-system]`.
+- Retrieval uses no models: no embeddings, rerankers, or model calls in `recall`, the prompt hook, or their benchmarks. Model review under `agent-learn enable` and the opt-in live evaluations are outside this rule.
 - Shell scripts are POSIX `sh` and resolve paths from their own location.
 - Scratch goes under `.work/` (ignored). Point `TMPDIR` at `.work/tmp` for tests.
 - Never run a production write (`make deploy`, `migrate-production`, `provision`, `provision-access`, `perf-deployed`) unless the owner asked for it. Keep `cloudflare/cloudflare.config.ts` the single Worker configuration.
