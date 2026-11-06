@@ -4,9 +4,10 @@ import {
   decodeSearchFilters,
   idFromPath,
   readRecord,
+  permitsOrigin,
+  scopedFilters,
   recordFromPath,
   searchMemories,
-  type MemoryFilters,
 } from "../memories.js";
 import { serverTiming } from "../observe.js";
 import { PROTOCOL } from "../protocol.js";
@@ -15,14 +16,6 @@ import { refuse, type SyncTiming } from "./shared.js";
 
 const SEARCH_PATH = "/api/v1/memories";
 const DETAIL_PREFIX = "/api/v1/memories/";
-
-function bound(filters: MemoryFilters, principal: Principal, timing: SyncTiming): MemoryFilters | Response {
-  if (principal.kind !== "collector") return filters;
-  if (filters.origin !== null && filters.origin !== principal.origin_host) {
-    return refuse(403, "forbidden", "origin does not match the collector binding", timing);
-  }
-  return { ...filters, origin: principal.origin_host };
-}
 
 async function search(
   request: Request,
@@ -36,12 +29,12 @@ async function search(
   }
   const decoded = decodeSearchFilters(url);
   if (decoded === null) return refuse(400, "invalid_request", "search filters are invalid", timing);
-  const filters = bound(decoded, principal, timing);
-  if (filters instanceof Response) return filters;
+  const filters = scopedFilters(decoded, principal);
+  if (filters === null) return refuse(403, "forbidden", "origin does not match the collector binding", timing);
   const started = performance.now();
   let page;
   try {
-    page = await searchMemories(env.DB, filters);
+    page = await searchMemories(env.DB, principal, filters);
   } finally {
     timing.d1 += performance.now() - started;
   }
@@ -64,13 +57,13 @@ async function detail(
   if (request.method !== "GET" && request.method !== "HEAD") {
     return methodNotAllowed(["GET", "HEAD"], { "Server-Timing": serverTiming(timing) });
   }
-  if (principal.kind === "collector" && principal.origin_host !== origin) {
+  if (!permitsOrigin(principal, origin)) {
     return refuse(403, "forbidden", "origin does not match the collector binding", timing);
   }
   const started = performance.now();
   let detail: Awaited<ReturnType<typeof readRecord>>;
   try {
-    detail = await readRecord(env.DB, origin, record, id);
+    detail = await readRecord(env.DB, principal, origin, record, id);
   } finally {
     timing.d1 += performance.now() - started;
   }

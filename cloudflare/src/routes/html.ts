@@ -53,20 +53,20 @@ function formValues(filters: MemoryFilters): SearchFormValues {
   };
 }
 
-async function landing(env: Env, timing: SyncTiming, head: boolean): Promise<Response> {
+async function landing(env: Env, principal: Principal, timing: SyncTiming, head: boolean): Promise<Response> {
   const started = performance.now();
   let counts: Awaited<ReturnType<typeof readCounts>>;
   let recent: Awaited<ReturnType<typeof searchMemories>>;
   try {
     counts = await readCounts(env.DB);
-    recent = await searchMemories(env.DB, recentFilters(10));
+    recent = await searchMemories(env.DB, principal, recentFilters(10));
   } finally {
     timing.d1 += performance.now() - started;
   }
   return html(renderLanding(counts, recent.memories), 200, timing, head);
 }
 
-async function search(url: URL, env: Env, timing: SyncTiming, head: boolean): Promise<Response> {
+async function search(url: URL, env: Env, principal: Principal, timing: SyncTiming, head: boolean): Promise<Response> {
   const cleaned = new URL(url.href);
   for (const key of ["q", "project", "origin", "type", "kind", "state"]) {
     if (cleaned.searchParams.get(key) === "") cleaned.searchParams.delete(key);
@@ -83,7 +83,7 @@ async function search(url: URL, env: Env, timing: SyncTiming, head: boolean): Pr
   const started = performance.now();
   let page: Awaited<ReturnType<typeof searchMemories>>;
   try {
-    page = await searchMemories(env.DB, filters);
+    page = await searchMemories(env.DB, principal, filters);
   } finally {
     timing.d1 += performance.now() - started;
   }
@@ -93,6 +93,7 @@ async function search(url: URL, env: Env, timing: SyncTiming, head: boolean): Pr
 async function detail(
   pathname: string,
   env: Env,
+  principal: Principal,
   timing: SyncTiming,
   head: boolean,
 ): Promise<Response> {
@@ -111,7 +112,7 @@ async function detail(
   const started = performance.now();
   let found;
   try {
-    found = await readRecord(env.DB, origin, record, id);
+    found = await readRecord(env.DB, principal, origin, record, id);
   } finally {
     timing.d1 += performance.now() - started;
   }
@@ -150,8 +151,8 @@ export async function handleHtml(
     return html("A reader identity is required to browse memories.", 403, timing);
   }
   const head = request.method === "HEAD";
-  if (pathname === "/") return await landing(env, timing, head);
-  if (pathname === "/search") return await search(url, env, timing, head);
+  if (pathname === "/") return await landing(env, principal, timing, head);
+  if (pathname === "/search") return await search(url, env, principal, timing, head);
   if (pathname === "/status") return await status(env, principal, timing, head);
-  return await detail(pathname, env, timing, head);
+  return await detail(pathname, env, principal, timing, head);
 }

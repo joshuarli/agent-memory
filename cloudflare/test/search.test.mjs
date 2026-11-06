@@ -323,3 +323,109 @@ test("reader pagination and source counts distinguish identical records from dif
   assert.deepEqual(rows.map((row) => [row.origin, row.source_count]), [[ORIGIN, 1], [OTHER_ORIGIN, 2]]);
   assert.equal(second.next_cursor, null);
 });
+
+test("MCP SDK client discovers tools and enforces collector scope", async (t) => {
+  const { Client, StreamableHTTPClientTransport } = await import("@modelcontextprotocol/client");
+  const { env } = await runtime(t);
+  await seed(env);
+  const endpoint = new URL("https://memories.17166969.xyz/mcp");
+  async function connect(identity) {
+    const client = new Client({ name: "test-client", version: "1" });
+    const transport = new StreamableHTTPClientTransport(endpoint, {
+      fetch: async (url, init) => await worker.fetch(new Request(url, init), env, identity),
+    });
+    await client.connect(transport);
+    t.after(() => client.close());
+    return client;
+  }
+  const [first, second] = await Promise.all([connect(collector()), connect(collector(OTHER_COLLECTOR))]);
+  const tools = await first.listTools();
+  assert.deepEqual(tools.tools.map((item) => item.name).sort(), ["memory_inspect", "memory_search", "server_status"]);
+  const [own, other] = await Promise.all([
+    first.callTool({ name: "memory_search", arguments: {} }),
+    second.callTool({ name: "memory_search", arguments: {} }),
+  ]);
+  assert.equal(JSON.parse(own.content[0].text).memories.length, 3);
+  assert.equal(JSON.parse(other.content[0].text).memories.length, 0);
+  const inspected = await first.callTool({ name: "memory_inspect", arguments: { origin: ORIGIN, record: "experience", id: "1" } });
+  const detail = JSON.parse(inspected.content[0].text);
+  assert.equal(detail.memory.origin, ORIGIN);
+  assert.equal(detail.sources.length, 1);
+  assert.equal(detail.links.length, 1);
+  const denied = await second.callTool({ name: "memory_inspect", arguments: { origin: ORIGIN, record: "experience", id: "1" } });
+  assert.equal(denied.isError, true);
+  const invalid = await first.callTool({ name: "memory_search", arguments: { limit: "101" } });
+  assert.equal(invalid.isError, true);
+  const status = await first.callTool({ name: "server_status", arguments: {} });
+  assert.equal(JSON.parse(status.content[0].text).origin, ORIGIN);
+  assert.equal(JSON.parse(status.content[0].text).sync.learning_revision, 1);
+  const otherStatus = await second.callTool({ name: "server_status", arguments: {} });
+  assert.equal(JSON.parse(otherStatus.content[0].text).origin, OTHER_ORIGIN);
+  assert.equal(JSON.parse(otherStatus.content[0].text).sync.learning_revision, null);
+  const extra = await worker.fetch(request("/api/v1/sync/learning/deltas", {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ protocol: 1, origin: OTHER_ORIGIN, base_revision: 0, digest: digest("mcp-extra"),
+      changes: [experience(6, { observed_at: 600, sources: [source("codex:native-6@origin-b")] })] }),
+  }), env, collector(OTHER_COLLECTOR));
+  assert.equal(extra.status, 200);
+  const readerClient = await connect(reader());
+  const readerSearch = await readerClient.callTool({ name: "memory_search", arguments: {} });
+  assert.equal(JSON.parse(readerSearch.content[0].text).memories.length, 4);
+  assert.equal(JSON.parse((await readerClient.callTool({ name: "server_status", arguments: {} })).content[0].text).scope, "reader");
+  const firstPage = JSON.parse((await first.callTool({ name: "memory_search", arguments: { limit: "1" } })).content[0].text);
+  assert.equal(firstPage.memories.length, 1);
+  assert.ok(firstPage.next_cursor);
+  const secondPage = JSON.parse((await first.callTool({ name: "memory_search", arguments: { limit: "1", after: firstPage.next_cursor } })).content[0].text);
+  assert.equal(secondPage.memories.length, 1);
+  assert.notEqual(firstPage.memories[0].id, secondPage.memories[0].id);
+});
+
+test("MCP rejects unauthorized identities, hostile origins and oversized requests", async (t) => {
+  const { env } = await runtime(t);
+  const url = "https://memories.17166969.xyz/mcp";
+  const init = { method: "POST", headers: { "Content-Type": "application/json", Accept: "application/json, text/event-stream" }, body: "{}" };
+  assert.equal((await worker.fetch(new Request(url, init), env, {})).status, 403);
+  assert.equal((await worker.fetch(new Request(url, { ...init, headers: { ...init.headers, Origin: "https://evil.example" } }), env, reader())).status, 403);
+  assert.equal((await worker.fetch(new Request("https://evil.example/mcp", init), env, reader())).status, 403);
+  const large = await worker.fetch(new Request(url, { ...init, body: "x".repeat(33000) }), env, reader());
+  assert.equal(large.status, 413);
+  assert.equal(large.headers.get("cache-control"), "no-store");
+});
+
+test("MCP schema, protocol and database failures do not expose internals", async (t) => {
+  const { Client, StreamableHTTPClientTransport } = await import("@modelcontextprotocol/client");
+  const { env } = await runtime(t);
+  const url = "https://memories.17166969.xyz/mcp";
+  const identity = reader();
+  const post = async (body, headers = {}) => await worker.fetch(new Request(url, { method: "POST",
+    headers: { "Content-Type": "application/json", Accept: "application/json, text/event-stream", ...headers }, body,
+  }), env, identity);
+  const malformed = await post("{");
+  assert.ok(malformed.status >= 400 || (await malformed.text()).includes("error"));
+  const unsupported = await post(JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/list", params: {} }),
+    { "MCP-Protocol-Version": "2099-01-01" });
+  assert.ok(unsupported.status >= 400 || (await unsupported.text()).includes("error"));
+  const unknown = await post(JSON.stringify({ jsonrpc: "2.0", id: 9, method: "unknown/method", params: {} }),
+    { "MCP-Protocol-Version": "2025-11-25" });
+  assert.match(await unknown.text(), /-32601/);
+  const listed = await post(JSON.stringify({ jsonrpc: "2.0", id: 2, method: "tools/list", params: {} }),
+    { "MCP-Protocol-Version": "2025-11-25" });
+  assert.equal(listed.status, 200);
+  assert.equal(listed.headers.get("cache-control"), "no-store");
+  const client = new Client({ name: "test-client", version: "1" });
+  await client.connect(new StreamableHTTPClientTransport(new URL(url), {
+    fetch: async (target, init) => await worker.fetch(new Request(target, init), env, identity),
+  }));
+  t.after(() => client.close());
+  const schema = await client.callTool({ name: "memory_search", arguments: { q: 123 } });
+  assert.equal(schema.isError, true);
+  const failingEnv = { ...env, DB: { prepare() { throw new Error("private database detail"); } } };
+  const failing = new Client({ name: "failing-client", version: "1" });
+  await failing.connect(new StreamableHTTPClientTransport(new URL(url), {
+    fetch: async (target, init) => await worker.fetch(new Request(target, init), failingEnv, identity),
+  }));
+  t.after(() => failing.close());
+  const outcome = await failing.callTool({ name: "memory_search", arguments: {} });
+  assert.equal(outcome.isError, true);
+  assert.doesNotMatch(JSON.stringify(outcome), /private database detail/);
+});

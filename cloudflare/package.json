@@ -13,9 +13,14 @@
   "devDependencies": {
     "@cloudflare/config": "0.29.0",
     "@cloudflare/workers-types": "5.20261101.1",
+    "@modelcontextprotocol/client": "2.4.0",
     "cf": "1.0.0-beta.26",
+    "esbuild": "0.28.2",
     "miniflare": "4.20260730.0",
     "oxlint": "1.90.0",
     "tsrs": "0.20.1-ts7.1.0-beta"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/server": "2.4.0"
   }
 }

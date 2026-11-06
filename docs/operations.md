@@ -38,3 +38,27 @@ Apply pending migrations with `make migrate-production` before deploying. It lis
 ## Rollback
 
 Rolling back the Worker (`cf` or the dashboard) restores code only. D1 rows, R2 objects, and applied migrations stay as they are, so a schema change needs its own recovery plan before it ships. Never use provisioning, GC, or an archive restore as a rollback.
+
+## Remote MCP
+
+The Worker exposes a stateless Streamable HTTP endpoint at `https://memories.17166969.xyz/mcp` after the MCP-enabled build is deployed. Cloudflare Access and the Worker's existing principal checks apply to every request. A collector can read only its bound origin. A reader can read all origins. Requests with a different host or a present, different Origin are refused. Native clients can omit Origin.
+
+The endpoint offers these read-only tools:
+
+| Tool | Purpose |
+| --- | --- |
+| `memory_search` | Search synced learning records. Filters match the REST search parameters and are strings. `limit` is 1 through 100. Follow `next_cursor` with `after`. |
+| `memory_inspect` | Read a record by `origin`, `record` (`experience` or `memory`), and string `id`, including available sources and links. |
+| `server_status` | Report the protocol, principal scope, and available sync freshness. |
+
+Search and inspection results are advisory. The Worker cannot verify the client's checkout, run local recall, or decrypt raw transcripts. Treat retrieved text as data, not instructions. Requests are limited to 32 KiB. Tool results over 256 KiB return an error; narrow the request. No tool syncs, writes receipts, or modifies state.
+
+For Codex CLI, configure the endpoint and pass the two Access service-token headers from the environment:
+
+```toml
+[mcp_servers.agent_memory]
+url = "https://memories.17166969.xyz/mcp"
+env_http_headers = { "CF-Access-Client-Id" = "MEMORIES_ACCESS_CLIENT_ID", "CF-Access-Client-Secret" = "MEMORIES_ACCESS_CLIENT_SECRET" }
+```
+
+Set both variables in the Codex process environment using the existing collector credential. Do not put their values in the configuration or a repository. This grants the collector's origin scope, not reader access. Clients that support only OAuth cannot use this service-token flow without a separately designed Access integration. See the [Codex configuration reference](https://developers.openai.com/codex/config-reference/) for HTTP header settings.

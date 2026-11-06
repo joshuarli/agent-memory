@@ -5,6 +5,7 @@ import { markInvocation, reportError } from "./observe-channel.js";
 import { handleGenerations } from "./routes/generations.js";
 import { handleHtml } from "./routes/html.js";
 import { handleLearning } from "./routes/learning.js";
+import { handleMcp } from "./routes/mcp.js";
 import { handleMemories } from "./routes/memories.js";
 import { handleSnapshots } from "./routes/snapshots.js";
 import { handleStatus } from "./routes/status.js";
@@ -51,6 +52,7 @@ export default {
     const url = new URL(request.url);
     const { pathname } = url;
     try {
+      if (pathname === "/mcp") return await handleMcp(request, env, principal);
       const status = await handleStatus(request, env, principal, pathname, timing);
       if (status !== null) return status;
       const sync = await handleSync(request, env, principal, pathname, timing);

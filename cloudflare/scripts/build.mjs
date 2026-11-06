@@ -3,6 +3,7 @@ import { execFileSync } from "node:child_process";
 import { existsSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { dirname, join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
+import { build } from "esbuild";
 import { loadAndParseConfig } from "@cloudflare/config";
 
 const root = dirname(dirname(fileURLToPath(import.meta.url)));
@@ -16,6 +17,13 @@ execFileSync(join(root, "node_modules/.bin/tsrs"), ["-p", "tsconfig.json", "--fa
   cwd: root,
   stdio: "inherit",
 });
+
+await build({
+  entryPoints: [join(bundle, "routes/mcp.js")],
+  outfile: join(bundle, "routes/mcp-bundled.js"),
+  bundle: true, minify: true, format: "esm", platform: "browser", conditions: ["workerd"],
+});
+writeFileSync(join(bundle, "routes/mcp.js"), 'export { handleMcp } from "./mcp-bundled.js";\n');
 
 const mainModule = join(bundle, "index.js");
 if (!existsSync(mainModule)) {

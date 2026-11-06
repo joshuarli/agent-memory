@@ -1,3 +1,4 @@
+import type { Principal } from "./auth.js";
 import { decodeCursor, encodeCursor } from "./protocol.js";
 
 export const MAX_SEARCH_LIMIT = 100;
@@ -341,8 +342,11 @@ async function pageSources(
 
 export async function searchMemories(
   db: D1Database,
-  filters: MemoryFilters,
+  principal: Principal,
+  requested: MemoryFilters,
 ): Promise<SearchPage> {
+  const filters = scopedFilters(requested, principal);
+  if (filters === null) throw new Error("origin does not match the collector binding");
   const statement = searchStatement(filters);
   const rows = (await db.prepare(statement.sql).bind(...statement.params).all<SearchRow>()).results;
   const page = rows.slice(0, filters.limit);
@@ -357,10 +361,12 @@ export async function searchMemories(
 
 export async function readRecord(
   db: D1Database,
+  principal: Principal,
   origin: string,
   record: "experience" | "memory",
   id: number,
 ): Promise<RecordDetail | null> {
+  if (!permitsOrigin(principal, origin)) throw new Error("origin does not match the collector binding");
   const state = await db.prepare(
     "SELECT epoch FROM learning_state WHERE origin_host = ?",
   ).bind(origin).first<{ readonly epoch: number }>();
@@ -411,4 +417,14 @@ export function recordFromPath(value: string): "experience" | "memory" | null {
 
 export function idFromPath(value: string): number | null {
   return CURSOR_ID.test(value) ? Number(value) : null;
+}
+
+export function scopedFilters(filters: MemoryFilters, principal: Principal): MemoryFilters | null {
+  if (principal.kind === "reader") return filters;
+  if (filters.origin !== null && filters.origin !== principal.origin_host) return null;
+  return { ...filters, origin: principal.origin_host };
+}
+
+export function permitsOrigin(principal: Principal, origin: string): boolean {
+  return principal.kind === "reader" || principal.origin_host === origin;
 }
