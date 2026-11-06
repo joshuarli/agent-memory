@@ -150,7 +150,7 @@ def initialize(db):
         CREATE INDEX IF NOT EXISTS learning_receipts_record ON learning_receipts(record);
         CREATE TABLE IF NOT EXISTS learning_hook_sessions(
             session TEXT PRIMARY KEY, project TEXT NOT NULL, attempted_at REAL NOT NULL,
-            outcome TEXT NOT NULL CHECK(outcome IN ('injected','abstained','timeout'))
+            outcome TEXT NOT NULL CHECK(outcome IN ('injected','abstained','timeout')), attempts INTEGER NOT NULL DEFAULT 1
         );
         CREATE TABLE IF NOT EXISTS learning_feedback(
             id INTEGER PRIMARY KEY, record TEXT NOT NULL, project TEXT NOT NULL,
@@ -189,6 +189,7 @@ def initialize(db):
             "learning_reviews": {"proposal": "TEXT"},
             "learning_evaluations": {"regressed": "INTEGER NOT NULL DEFAULT 0"},
             "learning_receipts": {"source": "TEXT NOT NULL DEFAULT 'agent' CHECK(source IN ('agent','hook'))"},
+            "learning_hook_sessions": {"attempts": "INTEGER NOT NULL DEFAULT 1"},
         }
         for table, columns in additions.items():
             existing = {column[1] for column in db.execute("PRAGMA table_info("+table+")")}

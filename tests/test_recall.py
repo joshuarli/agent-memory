@@ -1173,12 +1173,21 @@ class PromptHookTests(CliCase):
         assert context is not None
         self.assertNotIn("<", context.split("\n", 1)[1])
 
-    def test_a_query_past_its_deadline_injects_nothing_and_spends_the_attempt(self):
+    def test_a_timeout_injects_nothing_and_leaves_one_retry(self):
         self.observed_world()
         from agent_memory import recall_hook
         payload = {"hook_event_name": "UserPromptSubmit", "session_id": "s-1", "cwd": self.alpha, "prompt": self.TASK}
         self.assertIsNone(recall_hook.prompt_context(Path(self.state), payload, "codex", deadline_seconds=0.0))
         self.assertEqual(self.hook_rows(), [("s-1", "timeout")])
+        self.assertIsNotNone(recall_hook.prompt_context(Path(self.state), payload, "codex"), "a first timeout leaves one retry")
+        self.assertEqual(self.hook_rows(), [("s-1", "injected")])
+        self.assertIsNone(recall_hook.prompt_context(Path(self.state), payload, "codex"))
+        payload["session_id"] = "s-2"
+        for _ in range(2):
+            self.assertIsNone(recall_hook.prompt_context(Path(self.state), payload, "codex", deadline_seconds=0.0))
+        self.assertIsNone(recall_hook.prompt_context(Path(self.state), payload, "codex"), "a session stops after two timeouts")
+        with sqlite3.connect(Path(self.state) / "sessions.sqlite3") as db:
+            self.assertEqual(db.execute("SELECT outcome, attempts FROM learning_hook_sessions WHERE session = 's-2'").fetchone(), ("timeout", 2))
 
 
 class BridgeTests(RecallCase):
