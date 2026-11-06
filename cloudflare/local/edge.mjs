@@ -5,6 +5,7 @@ import { createServer } from "node:https";
 import { join } from "node:path";
 
 import { loadReleaseConfig, WORKER_CONFIG_PATH } from "./config.mjs";
+import { seedLearning } from "../bench/seed-learning.mjs";
 import { seedDatabase } from "../bench/seed.mjs";
 import { createStack } from "./stack.mjs";
 
@@ -100,6 +101,9 @@ export async function startEdge(options = {}) {
     readers: reader,
     teamDomain: TEAM_DOMAIN,
     audience: AUDIENCE,
+    stateDir: options.stateDir,
+    persistencePath: options.persistencePath,
+    keepState: options.keepState === true,
     outbound: async (request) => request.url === certs ? Response.json({ keys: [jwk] }) : undefined,
     allowOutbound: (url) => url === certs,
     bindings: options.faults === undefined ? undefined : { LOCAL_FAULTS: JSON.stringify(options.faults) },
@@ -107,7 +111,7 @@ export async function startEdge(options = {}) {
   const tls = certificate(stack.stateDir);
   const tokens = tokenTable(stack.stateDir, origins);
   const db = await stack.d1();
-  await seedDatabase(db);
+  if (options.seed !== false) await seedDatabase(db);
   const insert = db.prepare(
     "INSERT OR REPLACE INTO collector(service_token_id, origin_host, label, created_at, disabled) VALUES(?, ?, ?, ?, 0)",
   );
@@ -131,6 +135,18 @@ export async function startEdge(options = {}) {
       const url = new URL(request.url ?? "/", "https://127.0.0.1");
       if (options.testState === true && url.pathname === "/__test/faults") {
         return send(response, 200, { requests, faults, drops });
+      }
+      if (url.pathname === "/__bench/seed-learning") {
+        const payload = JSON.parse((await readBody(request)).toString("utf8") || "{}");
+        const count = Number(payload.records);
+        const offset = Number(payload.offset ?? 0);
+        const total = Number(payload.total ?? count);
+        if (!Number.isSafeInteger(count) || count < 1 || !Number.isSafeInteger(offset) || offset < 0
+            || !Number.isSafeInteger(total) || total < offset + count) {
+          return send(response, 400, { error: "records is invalid" });
+        }
+        await seedLearning(await stack.d1(), offset, count, total);
+        return send(response, 200, { records: count, offset, total });
       }
       if (url.pathname.startsWith("/__bench/")) {
         const forwarded = workerRequest(request, url, await readBody(request), domain, {});
@@ -190,7 +206,7 @@ export async function startEdge(options = {}) {
   const server = createServer({ key: readFileSync(tls.key), cert: readFileSync(tls.cert) }, handler);
   await new Promise((resolve, reject) => {
     server.once("error", reject);
-    server.listen(0, "127.0.0.1", resolve);
+    server.listen(options.port ?? 0, "127.0.0.1", resolve);
   });
   const address = server.address();
   const port = typeof address === "object" && address !== null ? address.port : 0;
@@ -199,5 +215,12 @@ export async function startEdge(options = {}) {
     await new Promise((resolve) => server.close(resolve));
     await stack.dispose();
   };
-  return { port, caFile: tls.caFile, tokenFiles: tokens.files, close, stack };
+  return {
+    port,
+    url: `https://127.0.0.1:${port}`,
+    caFile: tls.caFile,
+    tokenFiles: tokens.files,
+    close,
+    stack,
+  };
 }

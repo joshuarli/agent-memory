@@ -10,6 +10,7 @@ CF ?= cf
 CONFIRM_DATABASE ?=
 WORKER_DIR := cloudflare
 LOCAL_STATE := $(CURDIR)/.work/tmp/cf-state
+LOCAL_DEV := $(CURDIR)/.work/local/dev
 DATABASE_ID = $(shell node $(WORKER_DIR)/scripts/config.mjs database-id 2>/dev/null)
 PYTHON := uv run --no-project --python '>=3.15' python -I
 PERF := $(WORKER_DIR)/perf.sh
@@ -19,7 +20,7 @@ TYPED_PYTHON := src/agent_memory eval/bench_mirror.py tests/testkit.py
 GIT_TEMPLATE_DIR ?= $(wildcard /opt/homebrew/share/git-core/templates)
 ENV_GIT := $(if $(GIT_TEMPLATE_DIR),GIT_TEMPLATE_DIR=$(GIT_TEMPLATE_DIR))
 
-.PHONY: help test test-python lint dist worker-deps worker-bundle worker-test worker-check deploy smoke-deployed migrate-local migrations-check migrations-production migrate-production provision provision-access observe perf-local perf-worker perf-deployed perf-report
+.PHONY: help test test-python lint dist worker-deps worker-bundle worker-test worker-check deploy smoke-deployed migrate-local dev-local reset-local migrations-check migrations-production migrate-production provision provision-access observe perf-local perf-worker perf-deployed perf-report
 
 help: ## List targets
 	@awk 'BEGIN {FS = ":.*## "} /^[a-z][a-z0-9.-]*:.*## / {printf "%-22s %s\n", $$1, $$2}' $(MAKEFILE_LIST) | sort
@@ -74,6 +75,15 @@ migrate-local: ## Apply D1 migrations to the local simulation state
 
 migrations-check: ## Fail when an applied migration was edited
 	sh $(WORKER_DIR)/scripts/check-migrations.sh
+
+dev-local: ## Run the persistent local stack on 127.0.0.1:8790
+	@set -e; age=$$(sh $(WORKER_DIR)/dev-age.sh); \
+	cd $(WORKER_DIR) && AGE_BIN="$$age" node local/cli.mjs serve --persistent --port 8790 \
+		--state "$(LOCAL_DEV)" \
+		--origins '[{"client_id":"origin-a.access","origin":"origin-a"},{"client_id":"origin-b.access","origin":"origin-b"}]'
+
+reset-local: ## Remove the persistent local stack state
+	@rm -rf "$(LOCAL_DEV)"
 
 migrations-production: ## List pending production D1 migrations (remote, read-only)
 	@[ -n "$(DATABASE_ID)" ] || { >&2 printf 'migrations-production: cloudflare.config.ts has no D1 database id\n'; exit 1; }

@@ -5,7 +5,7 @@
   "scripts": {
     "build": "node scripts/build.mjs",
     "check": "tsrs -p tsconfig.json --noEmit --fast",
-    "lint": "oxlint src test local",
+    "lint": "oxlint src test local scripts",
     "test": "node --test test/*.test.mjs",
     "test:runtime": "node --test test/runtime.test.mjs",
     "test:protocol": "node --test test/protocol.test.mjs"

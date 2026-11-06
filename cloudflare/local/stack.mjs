@@ -121,7 +121,7 @@ export async function createStack(options = {}) {
 
   let miniflare;
   const runtimeOptions = {
-    resourcePersistencePath: join(stateDir, "state"),
+    resourcePersistencePath: options.persistencePath ?? join(stateDir, "state"),
     resourceTmpPath: join(stateDir, "tmp"),
     enableDevRegistry: false,
     telemetry: { enabled: false },
