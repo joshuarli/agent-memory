@@ -4,7 +4,7 @@
 
 - **Goal:** The production bundle runs in local workerd from the release config, with real local D1 and R2. The real Python client is tested against it offline, the November 5 cost fixes are guarded by executable tests, stats telemetry contracts are checked, and one `make check` gates deploys. The campaign ends with one cost reduction that is deployed and verified by `statsctl`.
 - **Base revision:** `4b2eaa6`. Baseline green (see **Baseline**).
-- **Accepted:** S1 (`aa32669`), S2 (`8ae85a2`), S3 (`87f2af1`), S4 (`4e5667f`), S5 (`b19be38`), S6 (`9a3bf90`), S7 (`a559546`), S8 (`5aa26ab` in stats), S9 (`740f5d0`; stats `8f5005c`). **Red:** none. **Parked:** none.
+- **Accepted:** S1 (`aa32669`), S2 (`8ae85a2`), S3 (`87f2af1`), S4 (`4e5667f`), S5 (`b19be38`), S6 (`9a3bf90`), S7 (`a559546`), S8 (`5aa26ab` in stats), S9 (`740f5d0`; stats `8f5005c`), S10 (`b1fdead`). **Red:** none. **Parked:** none.
 - **S1 evidence:** `make worker-test` 138 pass; bundle digest `3cca3896…` unchanged across the Miniflare bump; `make lint` green.
 - **S2 evidence:** 87 mirror tests pass; `make perf-worker REPEATS=1` exits 0; `make worker-test` 138 pass; `make lint` green.
 - **S3 evidence:** migration and schema tests 4 pass, including runner equivalence and the 0007→0009 upgrade; `make migrations-check` passes and rejects an edited migration; `make worker-test` 140 pass; `make lint` green.
@@ -14,7 +14,8 @@
 - **S7 evidence:** `make cost-check` 5 pass with pinned `meta.rows_written` budgets and a pinned index set; `make worker-test` 145 pass; `make lint` green.
 - **S8 evidence:** stats `make cloudflare-test lint` passed (309 vitest tests and 156 observe/node tests; lint 0); commit `5aa26ab` pushed; `stats-observe` deployed at version `b77ec39d-81f2-4a75-a90b-eddd5f4a787e`.
 - **S9 evidence:** the 13 observe contract/observe/channel tests pass; `make worker-test` 149 pass; `make cost-check` 5 pass; `make lint` green. The real `stats-observe` attempt passes (stats commit `8f5005c`): the agent-memory bundle's `status.read` trace is observed.
-- **Next slice:** S10.
+- **S10 evidence:** `make perf-cost` completes in 7m36s with 8 operations. The 30-day projection is $3.9705 (D1 written $3.9006, read $0.0695) on 3,900,643 rows written and 69,489,573 read; R2 Class A 461,551 and Class B 81,770. The initial backfill writes 645,607 rows; the hourly loop 4,512; the restore reads 244,032 and 80,960 objects. `make worker-test` 149, `make test-python`, `make integration-local`, `make cost-check`, `make lint`, and `make migrations-check` pass.
+- **Next slice:** S11.
 
 ## Charter
 
