@@ -1,3 +1,7 @@
+[build-system]
+requires = ["flit_core==4.2.0"]
+build-backend = "flit_core.buildapi"
+
 [project]
 name = "agent-memory"
 version = "0.1.0"
@@ -5,6 +9,18 @@ description = "Local agent session memory: transcript indexing, retrieval, and r
 readme = "README.md"
 requires-python = ">=3.15"
 dependencies = []
+
+[project.scripts]
+agent-learn = "agent_memory.learning:main"
+agent-sessions = "agent_memory.sessions_cli:main"
+agent-sessions-serve = "agent_memory.serve:main"
+
+[tool.flit.module]
+name = "agent_memory"
+
+[tool.flit.sdist]
+include = ["tests/", "eval/", "docs/"]
+exclude = ["cloudflare/"]
 
 [tool.pytest.ini_options]
 python_files = ["test_*.py"]
