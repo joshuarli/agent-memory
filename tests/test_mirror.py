@@ -1627,6 +1627,8 @@ def stop_integration_server(process):
         process.stdout.close()
     if process.stderr is not None:
         process.stderr.close()
+    for path in WORK_TMP.glob("stack-%d-*" % process.pid):
+        shutil.rmtree(path, ignore_errors=True)
 
 
 class MirrorIntegrationTests(unittest.TestCase):

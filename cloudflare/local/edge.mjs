@@ -5,6 +5,7 @@ import { createServer } from "node:https";
 import { join } from "node:path";
 
 import { loadReleaseConfig, WORKER_CONFIG_PATH } from "./config.mjs";
+import { handleControl } from "../scripts/test-control.mjs";
 import { seedLearning } from "../bench/seed-learning.mjs";
 import { seedDatabase } from "../bench/seed.mjs";
 import { createStack } from "./stack.mjs";
@@ -135,6 +136,10 @@ export async function startEdge(options = {}) {
       const url = new URL(request.url ?? "/", "https://127.0.0.1");
       if (options.testState === true && url.pathname === "/__test/faults") {
         return send(response, 200, { requests, faults, drops });
+      }
+      if (options.testState === true && url.pathname.startsWith("/__test/")) {
+        const result = await handleControl(request, url, stack, await readBody(request));
+        if (result !== undefined) return await relay(response, result);
       }
       if (url.pathname === "/__bench/seed-learning") {
         const payload = JSON.parse((await readBody(request)).toString("utf8") || "{}");

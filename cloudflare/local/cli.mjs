@@ -68,6 +68,7 @@ try {
   process.exit(1);
 }
 const output = options.persistent ? edge.endpoint : {
+  url: edge.url,
   port: edge.port,
   ca_file: edge.caFile,
   token_files: edge.tokenFiles,
