@@ -23,10 +23,12 @@ from agent_memory.learning_ops import SchedulerError
 from agent_memory import learning_sync
 from agent_memory.recall import DEFAULT_LIMIT, Retriever, SourceError, artifact_text as read_tracked_text
 from agent_memory.store import Store, StoreError, active_branch, default_state_dir, project_identity, redact
-from agent_memory.types import HARNESSES, FindingState, Harness, RetryKind, Signal
+from agent_memory.types import HARNESSES, FindingState, Harness, RecallSource, RetryKind, Signal
 
 
 SCHEMA_VERSION = 4
+HOOK_PAYLOAD_BYTES = 1 << 20
+HOOK_PROMPT_ANCHOR_CHARS = 40
 MAX_EVENTS = 2000
 MAX_REVIEWS = 2
 MAX_MODEL_CALLS_PER_DAY = 24
@@ -130,6 +132,10 @@ def initialize(db):
             event TEXT NOT NULL CHECK(event IN ('returned','inspected','abstained')), session TEXT
         );
         CREATE INDEX IF NOT EXISTS learning_receipts_record ON learning_receipts(record);
+        CREATE TABLE IF NOT EXISTS learning_hook_sessions(
+            session TEXT PRIMARY KEY, project TEXT NOT NULL, attempted_at REAL NOT NULL,
+            outcome TEXT NOT NULL CHECK(outcome IN ('injected','abstained','timeout'))
+        );
         CREATE TABLE IF NOT EXISTS learning_feedback(
             id INTEGER PRIMARY KEY, record TEXT NOT NULL, project TEXT NOT NULL,
             reporter TEXT NOT NULL CHECK(reporter IN ('agent','user','source')),
@@ -166,6 +172,7 @@ def initialize(db):
             "learning_memories": {"validity": "TEXT NOT NULL DEFAULT '[]'"},
             "learning_reviews": {"proposal": "TEXT"},
             "learning_evaluations": {"regressed": "INTEGER NOT NULL DEFAULT 0"},
+            "learning_receipts": {"source": "TEXT NOT NULL DEFAULT 'agent' CHECK(source IN ('agent','hook'))"},
         }
         for table, columns in additions.items():
             existing = {column[1] for column in db.execute("PRAGMA table_info("+table+")")}
@@ -1204,7 +1211,7 @@ class Learner:
                 return Path(row[0])
         return None
 
-    def retrieve(self, project, query, cwd=None, limit=DEFAULT_LIMIT, explain=False, verify=True, include_events=True, now=None, record=False, session=None, weak=False) -> dict[str, Any]:
+    def retrieve(self, project, query, cwd=None, limit=DEFAULT_LIMIT, explain=False, verify=True, include_events=True, now=None, record=False, session=None, weak=False, source: RecallSource = "agent") -> dict[str, Any]:
         current = Path(cwd) if cwd is not None else self._project_cwd(project)
         if cwd is not None and project_identity(current) != project:
             raise LearningError("memory retrieval directory belongs to another project")
@@ -1214,7 +1221,7 @@ class Learner:
             response["hint"] = RETRY_HINT
             response["vocabulary"] = self.vocabulary(project)
         if record:
-            self._record_receipts(project, current, query, response, moment, session)
+            self.record_receipts(project, current, query, response, moment, session, source)
         return response
 
     def vocabulary(self, project, limit=15):
@@ -1225,15 +1232,15 @@ class Learner:
             counts.update(technical_tokens(row[0] + " " + row[1], 8))
         return [redact(token) for token, _ in counts.most_common(limit) if redact(token) == token]
 
-    def _record_receipts(self, project, cwd, query, response, now, session):
+    def record_receipts(self, project, cwd, query, response, now, session, source: RecallSource):
         text = redact(" ".join(str(query).split()))[:300]
         with self.db:
             if not response["results"]:
-                self.db.execute("INSERT INTO learning_receipts(project,cwd,query,created_at,record,tier,status,rank,event,session) VALUES(?,?,?,?,'','','',0,'abstained',?)",
-                                (project, str(cwd) if cwd else None, text, now, session))
+                self.db.execute("INSERT INTO learning_receipts(project,cwd,query,created_at,record,tier,status,rank,event,session,source) VALUES(?,?,?,?,'','','',0,'abstained',?,?)",
+                                (project, str(cwd) if cwd else None, text, now, session, source))
             for rank, item in enumerate(response["results"]):
-                self.db.execute("INSERT INTO learning_receipts(project,cwd,query,created_at,record,tier,status,rank,event,session) VALUES(?,?,?,?,?,?,?,?,'returned',?)",
-                                (project, str(cwd) if cwd else None, text, now, item["ref"], item["tier"], item["status"], rank, session))
+                self.db.execute("INSERT INTO learning_receipts(project,cwd,query,created_at,record,tier,status,rank,event,session,source) VALUES(?,?,?,?,?,?,?,?,'returned',?,?)",
+                                (project, str(cwd) if cwd else None, text, now, item["ref"], item["tier"], item["status"], rank, session, source))
 
     def recall(self, project, query, cwd=None) -> list[dict[str, Any]]:
         response = self.retrieve(project, query, cwd=cwd, include_events=False)
@@ -1321,6 +1328,9 @@ class Learner:
         for row in self.db.execute("SELECT project,cwd FROM learning_projects WHERE enabled=1"):
             found.setdefault(row["project"], row["cwd"])
         return found
+
+    def captures(self, project) -> bool:
+        return project in self._observed_projects()
 
     def observe_project(self, project, cwd, now, stable_seconds=STABLE_SECONDS):
         totals = observe_project(self.db, project, Path(cwd), now, stable_seconds)
@@ -1498,7 +1508,7 @@ class Learner:
                 self._purge_findings([row[0] for row in self.db.execute("SELECT finding FROM learning_experience_findings WHERE experience=?", (experience,))], experience)
                 self._purge_record_traces("experience:%d" % experience)
                 self.db.execute("DELETE FROM learning_experiences WHERE id=?", (experience,))
-            for table in ("learning_signatures", "learning_observed", "learning_processed", "learning_evaluations", "learning_outcomes", "learning_receipts", "learning_feedback"):
+            for table in ("learning_signatures", "learning_observed", "learning_processed", "learning_evaluations", "learning_outcomes", "learning_receipts", "learning_feedback", "learning_hook_sessions"):
                 self.db.execute("DELETE FROM %s WHERE session=?" % table, (session,))
             prefix = "event:%s@" % session
             for table in ("learning_receipts", "learning_feedback", "learning_outcomes"):
@@ -1556,6 +1566,9 @@ class Learner:
             "(SELECT 1 FROM learning_receipts i WHERE i.record=r.record AND i.event='inspected')").fetchone()[0]
         feedback = {"%s/%s" % (row[0], row[1]): row[2] for row in self.db.execute("SELECT reporter,verdict,count(*) FROM learning_feedback GROUP BY reporter,verdict")}
         outcomes = {row[0]: row[1] for row in self.db.execute("SELECT verification,count(*) FROM learning_outcomes GROUP BY verification")}
+        hook_attempts = {row[0]: row[1] for row in self.db.execute("SELECT outcome,count(*) FROM learning_hook_sessions GROUP BY outcome")}
+        hook_outcomes = {"%s/%s" % ("acted" if row[0] else "not_acted", row[1]): row[2] for row in self.db.execute(
+            "SELECT coalesce(o.acted,0),o.verification,count(*) FROM learning_outcomes o JOIN learning_hook_sessions h ON h.session=o.session GROUP BY 1,2")}
         consolidation = []
         rows = self.db.execute("SELECT id,project,identifiers,claim FROM learning_experiences WHERE state='retained' ORDER BY id DESC LIMIT 200").fetchall()
         for index, left in enumerate(rows):
@@ -1575,6 +1588,8 @@ class Learner:
             "feedback": feedback,
             "feedback_note": "Feedback and receipts are observations; they never change instruction authority or ranking tier.",
             "outcomes_by_verification": outcomes,
+            "hook_attempts": hook_attempts,
+            "hook_outcomes": hook_outcomes,
             "not_observable": ["whether the agent obeyed a result", "whether a missed memory existed but was never captured", "causal improvement"],
         }
 
@@ -1596,6 +1611,15 @@ class Learner:
         return written
 
     def _receipt_session(self, receipt):
+        if receipt["source"] == "hook":
+            if not receipt["session"]:
+                return None
+            events, _ = self._events(receipt["session"])
+            prompt = receipt["query"][:HOOK_PROMPT_ANCHOR_CHARS]
+            for index, event in enumerate(events):
+                if event["kind"] == "user" and redact(" ".join(event["text"].split())).startswith(prompt):
+                    return receipt["session"], events, index
+            return None
         for row in self.db.execute("SELECT id FROM sessions WHERE project=? AND updated>=? ORDER BY updated LIMIT 40", (receipt["project"], receipt["created_at"] - 3600)):
             events, _ = self._events(row["id"])
             for index, event in enumerate(events):
@@ -1607,8 +1631,11 @@ class Learner:
 
     def _follow_through(self, receipt, session, events, index):
         ref = receipt["record"]
-        output = next((event for event in events[index + 1:index + 4] if event["kind"] == "tool-output"), None)
-        presented = int(output is not None and ref in output["text"])
+        if receipt["source"] == "hook":
+            presented = 1
+        else:
+            output = next((event for event in events[index + 1:index + 4] if event["kind"] == "tool-output"), None)
+            presented = int(output is not None and ref in output["text"])
         if not presented:
             return {"presented": 0, "acted": None, "verification": "unknown", "repeated": None}
         record_tokens = self._record_tokens(ref)
@@ -1751,7 +1778,7 @@ def parser():
     commands.add_parser("quality", help="report retrieval quality observations from receipts, feedback and transcripts")
     commands.add_parser("reindex", help="rebuild the recall projection from canonical records")
     commands.add_parser("undo", help="withdraw one promoted skill edit or approved project memory").add_argument("finding", type=int, help="finding id from findings")
-    commands.add_parser("hook", help=argparse.SUPPRESS)
+    commands.add_parser("hook", help=argparse.SUPPRESS).add_argument("--harness", choices=HARNESSES)
     return cli
 
 
@@ -1763,13 +1790,26 @@ def main(argv=None):
         return 2
     if args.command == "hook":
         from agent_memory.learning_ops import hook
+        output: dict[str, Any] = {}
         try:
-            raw = sys.stdin.buffer.read(16385)
-            if len(raw) <= 16384:
-                hook(args.state_dir, json.loads(raw))
-        except (OSError, ValueError, sqlite3.Error) as error:
+            raw = sys.stdin.buffer.read(HOOK_PAYLOAD_BYTES + 1)
+            if len(raw) > HOOK_PAYLOAD_BYTES:
+                raise ValueError("hook payload over %d bytes" % HOOK_PAYLOAD_BYTES)
+            payload = json.loads(raw)
+            if not isinstance(payload, dict):
+                raise ValueError("hook payload is not an object")
+            if payload.get("hook_event_name") == "UserPromptSubmit":
+                if args.harness is None:
+                    raise ValueError("UserPromptSubmit needs --harness")
+                from agent_memory.recall_hook import prompt_context
+                context = prompt_context(args.state_dir, payload, args.harness)
+                if context:
+                    output = {"hookSpecificOutput": {"hookEventName": "UserPromptSubmit", "additionalContext": context}}
+            else:
+                hook(args.state_dir, payload)
+        except (OSError, ValueError, sqlite3.Error, StoreError, LearningError) as error:
             print("agent-learn hook: " + redact(str(error))[:200], file=sys.stderr)
-        print("{}")
+        print(json.dumps(output))
         return 0
     try:
         store = Store(args.state_dir)

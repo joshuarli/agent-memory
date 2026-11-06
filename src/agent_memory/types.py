@@ -44,3 +44,7 @@ RetryKind = Literal[
 FeedbackVerdict = Literal["helped", "irrelevant", "stale", "misleading"]
 
 ReceiptEvent = Literal["returned", "inspected", "abstained"]
+
+RecallSource = Literal["agent", "hook"]
+
+HookOutcome = Literal["injected", "abstained", "timeout"]

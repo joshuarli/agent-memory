@@ -984,7 +984,7 @@ class OpenCodeTests(unittest.TestCase):
         self.assertTrue(all(item["verified"] for item in inspected["evidence"]))
 
 
-class CommandTests(RecallCase):
+class CliCase(RecallCase):
     def setUp(self):
         self.env: dict[str, str] = {}
 
@@ -1010,6 +1010,8 @@ class CommandTests(RecallCase):
             self.assertEqual(result.returncode, 0, result.stderr)
         return result
 
+
+class CommandTests(CliCase):
     def test_local_only_flow_needs_no_enrollment_and_makes_no_model_request(self):
         self.prepare_cli(lesson_world())
         project = str(self.world.projects["alpha"]["path"])
@@ -1068,6 +1070,80 @@ class CommandTests(RecallCase):
         store = agent_session_store.Store(self.state)
         self.addCleanup(store.close)
         self.assertEqual(store.db.execute("SELECT repository FROM learning_projects").fetchone()[0], str(home_usr.resolve()))
+
+
+class PromptHookTests(CliCase):
+    TASK = "tests fail with ModuleNotFoundError orbit_core on a clean checkout again, sort it out"
+
+    def observed_world(self):
+        self.prepare_cli(lesson_world())
+        self.alpha = str(self.world.projects["alpha"]["path"])
+        self.beta = str(self.world.projects["beta"]["path"])
+        self.run_cli("observe", "--project", self.alpha, "--run")
+
+    def hook(self, prompt, session="s-1", cwd=None, harness=("--harness", "claude"), env=None, **extra):
+        payload = {"hook_event_name": "UserPromptSubmit", "session_id": session, "cwd": cwd or self.alpha, "prompt": prompt,
+                   "transcript_path": str(Path(self.state) / "not-read.jsonl"), **extra}
+        result = subprocess.run([*testkit.command("agent-learn"), "--state-dir", str(self.state), "hook", *harness],
+                                input=json.dumps(payload), capture_output=True, text=True, env=env or self.env)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        return json.loads(result.stdout), result.stderr
+
+    def hook_rows(self):
+        with sqlite3.connect(Path(self.state) / "sessions.sqlite3") as db:
+            return db.execute("SELECT session, outcome FROM learning_hook_sessions ORDER BY session").fetchall()
+
+    def test_first_task_prompt_of_a_session_gets_relevant_experience_once(self):
+        self.observed_world()
+        output, _ = self.hook(self.TASK)
+        self.assertEqual(output["hookSpecificOutput"]["hookEventName"], "UserPromptSubmit")
+        context = output["hookSpecificOutput"]["additionalContext"]
+        self.assertIn("not an instruction", context)
+        self.assertIn("orbit", context.lower())
+        self.assertLessEqual(len(context.split("\n", 1)[1]), 600 + 2)
+        self.assertEqual(self.hook(self.TASK)[0], {}, "a session gets recall once")
+        self.assertIn("hookSpecificOutput", self.hook(self.TASK, session="s-2")[0])
+        self.assertEqual(self.hook_rows(), [("claude:s-1", "injected"), ("claude:s-2", "injected")])
+        with sqlite3.connect(Path(self.state) / "sessions.sqlite3") as db:
+            sources = db.execute("SELECT DISTINCT session, source FROM learning_receipts WHERE event = 'returned' ORDER BY session").fetchall()
+        self.assertEqual(sources, [("claude:s-1", "hook"), ("claude:s-2", "hook")])
+
+    def test_hook_stays_silent_without_a_task_prompt_observation_or_a_match(self):
+        self.observed_world()
+        self.assertEqual(self.hook("fix it")[0], {})
+        self.assertEqual(self.hook("/compact " + "x" * 60)[0], {})
+        self.assertEqual(self.hook_rows(), [], "a non-task prompt leaves the session's one attempt unspent")
+        self.assertEqual(self.hook("websocket reconnect backoff for the mobile client needs jitter now", session="s-3")[0], {})
+        self.assertEqual(self.hook(self.TASK, cwd=self.beta, session="s-4")[0], {}, "a project without capture gets nothing")
+        self.assertEqual(self.hook(self.TASK, session="s-5", env=dict(self.env, AGENT_LEARN_WORKER="1"))[0], {})
+        self.assertEqual(self.hook(self.TASK, session="s-7", harness=("--harness", "codex"), agent_id="sub-1", agent_type="explorer")[0], {})
+        self.assertEqual(self.hook_rows(), [("claude:s-3", "abstained")])
+        output, stderr = self.hook(self.TASK, session="s-6", harness=())
+        self.assertEqual(output, {})
+        self.assertIn("--harness", stderr)
+
+    def test_an_earlier_copy_of_the_prompt_is_not_injected_but_its_answer_is(self):
+        prompt = "Solve the task in the attached file and report the kestrel shard rebalance throughput afterwards"
+        spec = fixture({"alpha": BASE}, [
+            episode("copy", "alpha", [{"user": prompt}, {"assistant": "Looking at the attached file now."}], age=20),
+            episode("answer", "alpha", [
+                {"user": "why does the kestrel shard rebalance stall"},
+                tool("bench/rebalance.sh", "solved the attached task file; report: kestrel shard rebalance throughput 412 MB/s afterwards", 0)], age=12),
+        ])
+        self.prepare_cli(spec)
+        self.alpha = str(self.world.projects["alpha"]["path"])
+        self.run_cli("observe", "--project", self.alpha, "--run")
+        context = self.hook(prompt)[0]["hookSpecificOutput"]["additionalContext"]
+        self.assertIn("412 MB/s", context)
+        self.assertNotIn("Looking at the attached", context)
+        self.assertEqual(len(context.splitlines()), 2, "the copy of the prompt is not a line of its own")
+
+    def test_a_query_past_its_deadline_injects_nothing_and_spends_the_attempt(self):
+        self.observed_world()
+        from agent_memory import recall_hook
+        payload = {"hook_event_name": "UserPromptSubmit", "session_id": "s-1", "cwd": self.alpha, "prompt": self.TASK}
+        self.assertIsNone(recall_hook.prompt_context(Path(self.state), payload, "codex", deadline_seconds=0.0))
+        self.assertEqual(self.hook_rows(), [("s-1", "timeout")])
 
 
 class BridgeTests(RecallCase):
@@ -1145,6 +1221,25 @@ class OutcomeTests(RecallCase):
     def test_failed_verification_and_repeated_mistake_are_observed(self):
         outcome = self.follow_up([tool("pytest -q tests/test_ingest.py", PYTEST_FAIL, 1)])
         self.assertEqual((outcome["acted"], outcome["verification"], outcome["repeated"]), (1, "failed", 1))
+
+    def test_hook_injected_result_is_traced_from_the_prompt_it_answered(self):
+        self.build(lesson_world())
+        prompt = "tests fail with ModuleNotFoundError orbit_core on a clean checkout again, sort it out"
+        ref = self.ask("alpha", prompt)["results"][0]["ref"]
+        start = self.world.now - 3 * 86400
+        spec = episode("w-2", "alpha", [{"user": prompt}, tool("pytest -q tests/test_ingest.py", "1 passed in 0.4s", 0)], age=3)
+        BENCH.write_episode(self.world.roots, spec, self.world.cwd("alpha"), start)
+        self.store.refresh(roots=self.world.root_args())
+        session = BENCH.qualified("codex", BENCH.native(spec))
+        self.learner.record_receipts(self.ident["alpha"], self.world.cwd("alpha"), prompt, {"results": [{"ref": ref, "tier": "experience", "status": "unverified"}]},
+                                     start + 1, session, "hook")
+        self.learner.trace_outcomes(self.world.now)
+        row = self.store.db.execute("SELECT session, presented, acted, verification FROM learning_outcomes").fetchone()
+        self.assertEqual(tuple(row), (session, 1, 1, "passed"))
+        with self.store.db:
+            self.store.db.execute("INSERT INTO learning_hook_sessions(session, project, attempted_at, outcome) VALUES (?, ?, ?, 'injected')", (session, self.ident["alpha"], start + 1))
+        quality = self.learner.quality()
+        self.assertEqual((quality["hook_attempts"], quality["hook_outcomes"]), ({"injected": 1}, {"acted/passed": 1}))
 
     def test_unlocatable_session_stays_unknown_rather_than_guessed(self):
         self.build(lesson_world())
