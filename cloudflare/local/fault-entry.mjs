@@ -3,6 +3,7 @@ import worker from "./index.js";
 const counts = new Map();
 const seen = { d1Batch: 0, r2Put: 0, r2Get: 0 };
 const rows = { read: 0, written: 0, statements: 0 };
+const r2 = { put: 0, get: 0, head: 0, list: 0, multipart: 0, delete: 0, bytesIn: 0, bytesOut: 0 };
 let requests = 0;
 
 const addMeta = (meta) => { if (!meta) return; rows.read += meta.rows_read ?? 0; rows.written += meta.rows_written ?? 0; };
@@ -60,6 +61,15 @@ function counted(binding, label, hooks = {}) {
           results.forEach((item) => addMeta(item.meta));
           return results;
         });
+        if (label === "r2") {
+          const method = String(property);
+          if (method === "put") { r2.put += 1; r2.bytesIn += args[1]?.byteLength ?? 0; }
+          else if (method === "get") return result.then((object) => { r2.get += 1; r2.bytesOut += object?.size ?? 0; return object; });
+          else if (method === "head") r2.head += 1;
+          else if (method === "list") r2.list += 1;
+          else if (method === "createMultipartUpload") r2.multipart += 1;
+          else if (method === "delete") r2.delete += 1;
+        }
         return property === "prepare" ? countedStatement(result) : result;
       };
     },
@@ -95,10 +105,11 @@ function reply(value, status = 200) {
 export default {
   async fetch(request, env, context) {
     const url = new URL(request.url);
-    if (url.pathname === "/__bench/status") return reply({ requests, counters: Object.fromEntries(counts), rows });
+    if (url.pathname === "/__bench/status") return reply({ requests, counters: Object.fromEntries(counts), rows, r2 });
     if (url.pathname === "/__bench/reset") {
       counts.clear(); requests = 0; rows.read = 0; rows.written = 0; rows.statements = 0;
-      return reply({ requests, counters: {}, rows });
+      for (const key of Object.keys(r2)) r2[key] = 0;
+      return reply({ requests, counters: {}, rows, r2 });
     }
     requests += 1;
     const plan = limits(env);

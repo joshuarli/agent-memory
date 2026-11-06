@@ -1,48 +1,16 @@
-import { execFileSync } from "node:child_process";
-import { generateKeyPairSync, randomBytes, sign } from "node:crypto";
-import { chmodSync, readFileSync, writeFileSync } from "node:fs";
+import { generateKeyPairSync } from "node:crypto";
+import { readFileSync } from "node:fs";
 import { createServer } from "node:https";
-import { join } from "node:path";
 
 import { loadReleaseConfig, WORKER_CONFIG_PATH } from "./config.mjs";
+import { AUDIENCE, READER, TEAM_DOMAIN, assertionFor, certificate, tokenTable } from "../scripts/edge-support.mjs";
 import { handleControl } from "../scripts/test-control.mjs";
 import { seedLearning } from "../bench/seed-learning.mjs";
 import { seedDatabase } from "../bench/seed.mjs";
 import { createStack } from "./stack.mjs";
 
-const TEAM_DOMAIN = "team.example.test";
-const AUDIENCE = "local-audience";
-const READER = "reader@example.test";
 const CLIENT_HEADERS = ["cf-access-client-id", "cf-access-client-secret"];
 const DROP_HEADERS = new Set(["host", "connection", "content-length", "transfer-encoding", "expect", ...CLIENT_HEADERS]);
-
-function certificate(directory) {
-  const key = join(directory, "edge-key.pem");
-  const cert = join(directory, "edge-cert.pem");
-  execFileSync("openssl", [
-    "req", "-x509", "-newkey", "rsa:2048", "-nodes", "-keyout", key, "-out", cert,
-    "-days", "1", "-subj", "/CN=127.0.0.1", "-addext", "subjectAltName=IP:127.0.0.1",
-  ], { stdio: "ignore" });
-  chmodSync(key, 0o600);
-  return { key, cert, caFile: cert };
-}
-
-function tokenTable(directory, origins) {
-  const files = {};
-  const byClient = new Map();
-  for (const item of origins) {
-    if (typeof item.client_id !== "string" || typeof item.origin !== "string") {
-      throw new Error("local edge: every origin needs client_id and origin");
-    }
-    const secret = randomBytes(24).toString("base64url");
-    const path = join(directory, `token-${item.origin}.json`);
-    writeFileSync(path, JSON.stringify({ client_id: item.client_id, client_secret: secret }), { mode: 0o600 });
-    chmodSync(path, 0o600);
-    files[item.origin] = path;
-    byClient.set(item.client_id, { secret, origin: item.origin });
-  }
-  return { files, byClient };
-}
 
 async function readBody(request) {
   const chunks = [];
@@ -121,15 +89,6 @@ export async function startEdge(options = {}) {
     "INSERT OR REPLACE INTO collector(service_token_id, origin_host, label, created_at, disabled) VALUES(?, ?, ?, ?, 0)",
   );
   for (const item of origins) await insert.bind(item.client_id, item.origin, "local", 0).run();
-  const encode = (value) => Buffer.from(JSON.stringify(value)).toString("base64url");
-  const assertion = (clientId) => {
-    const now = Math.floor(Date.now() / 1000);
-    const input = `${encode({ alg: "RS256", kid: "local-key", typ: "JWT" })}.${encode({
-      type: "app", aud: [AUDIENCE], exp: now + 3600, iat: now - 10,
-      iss: `https://${TEAM_DOMAIN}`, sub: "", common_name: clientId,
-    })}`;
-    return `${input}.${sign("RSA-SHA256", Buffer.from(input), privateKey).toString("base64url")}`;
-  };
   let requests = 0;
   let faults = 0;
   let drops = 0;
@@ -161,7 +120,10 @@ export async function startEdge(options = {}) {
       }
       if (url.pathname.startsWith("/__bench/")) {
         const forwarded = workerRequest(request, url, await readBody(request), domain, {});
-        return await relay(response, await stack.dispatchFetch(forwarded.url, forwarded.init));
+        const target = url.searchParams.get("worker") === "collectors" ? await stack.collectorWorker() : null;
+        return await relay(response, target === null
+          ? await stack.dispatchFetch(forwarded.url, forwarded.init)
+          : await target.fetch(new Request(forwarded.url, forwarded.init)));
       }
       if (dropRequestPath !== null && !droppedRequestPath && url.pathname.startsWith(dropRequestPath)
           && (dropRequestMethod === null || request.method === dropRequestMethod)) {
@@ -210,7 +172,7 @@ export async function startEdge(options = {}) {
           return send(response, 403, { error: { code: "forbidden", message: "Access service token is invalid" } });
         }
         const forwarded = workerRequest(request, url, body, domain, {
-          "Cf-Access-Jwt-Assertion": assertion(clientId),
+          "Cf-Access-Jwt-Assertion": assertionFor(privateKey, clientId),
         });
         const result = await (await stack.collectorWorker()).fetch(new Request(forwarded.url, forwarded.init));
         return await finish(request, response, result, dropResponse);
