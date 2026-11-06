@@ -1152,7 +1152,7 @@ class PromptHookTests(CliCase):
                 writer.execute("ROLLBACK")
                 writer.close()
             self.assertEqual(output, {}, lock)
-            self.assertLess(elapsed, 4.0, "%s lock held the prompt for %.1f s" % (lock, elapsed))
+            self.assertLess(elapsed, 4.5, "%s lock held the prompt for %.1f s" % (lock, elapsed))
         self.assertIn("hookSpecificOutput", self.hook(self.TASK, session="after-locks")[0])
 
     def test_forgetting_a_hooked_session_deletes_its_traces_and_stops_the_hook(self):

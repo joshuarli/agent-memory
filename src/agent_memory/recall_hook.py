@@ -13,7 +13,7 @@ from agent_memory.store import Store, project_identity
 from agent_memory.transcripts import qualified_id
 from agent_memory.types import Harness, HookOutcome
 
-DEADLINE_SECONDS = 2.0
+DEADLINE_SECONDS = 3.0
 MIN_PROMPT_CHARS = 40
 MAX_PROMPT_CHARS = 2000
 INJECTED_PROMPT_PREFIXES = ("/", "<", "#!", "Caveat:", "# AGENTS.md instructions")
