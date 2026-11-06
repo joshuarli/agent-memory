@@ -1,0 +1,32 @@
+{
+  "operations": [
+    "request.auth",
+    "request.route",
+    "sync.replace",
+    "snapshots.commit",
+    "generations.commit",
+    "sync.hello",
+    "sync.missing",
+    "sync.upload",
+    "snapshots.page",
+    "snapshots.verify",
+    "snapshots.gc",
+    "tombstones.commit",
+    "learning.state",
+    "learning.delta",
+    "learning.reconcile",
+    "memories.search",
+    "status.read",
+    "mcp.request"
+  ],
+  "events": [
+    {
+      "kind": "operation",
+      "traceId": "7bcf42a3d155dee9563e537e144790e4",
+      "spanId": "1b1e95b0d4dcde81",
+      "operation": "status.read",
+      "synthetic": false,
+      "rows": { "read": 1, "written": 0, "statements": 1 }
+    }
+  ]
+}

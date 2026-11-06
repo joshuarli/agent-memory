@@ -1,4 +1,55 @@
 import { projectionDeletionStatements } from "./learning.js";
+import type { RowMeter } from "./observe-channel.js";
+
+interface D1Meta {
+  readonly rows_read?: number;
+  readonly rows_written?: number;
+}
+
+function addMeta(meter: RowMeter, meta: D1Meta | undefined): void {
+  if (meta === undefined) return;
+  meter.read += meta.rows_read ?? 0;
+  meter.written += meta.rows_written ?? 0;
+}
+
+export function meterD1(db: D1Database, meter: RowMeter): D1Database {
+  const statement = (target: D1PreparedStatement): D1PreparedStatement => new Proxy(target, {
+    get(object, property) {
+      const value = Reflect.get(object, property);
+      if (typeof value !== "function") return value;
+      if (property === "bind") {
+        return (...args: unknown[]) => statement(value.apply(object, args));
+      }
+      if (property === "first" || property === "all" || property === "run") {
+        return (...args: unknown[]) => {
+          meter.statements += 1;
+          const result = value.apply(object, args) as Promise<{ readonly meta?: D1Meta } | null>;
+          return result.then((resolved) => {
+            addMeta(meter, resolved?.meta);
+            return resolved;
+          });
+        };
+      }
+      return (...args: unknown[]) => value.apply(object, args);
+    },
+  });
+  return new Proxy(db, {
+    get(target, property) {
+      const value = Reflect.get(target, property);
+      if (typeof value !== "function") return value;
+      if (property === "prepare") return (query: string) => statement(value.call(target, query));
+      if (property === "batch") {
+        return async (statements: D1PreparedStatement[]) => {
+          const results = await value.apply(target, [statements]) as { readonly meta?: D1Meta }[];
+          meter.statements += statements.length;
+          for (const result of results) addMeta(meter, result.meta);
+          return results;
+        };
+      }
+      return (...args: unknown[]) => value.apply(target, args);
+    },
+  }) as D1Database;
+}
 
 export interface StoreMeta {
   readonly id: string;

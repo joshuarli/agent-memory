@@ -2,7 +2,10 @@ import worker from "./index.js";
 
 const counts = new Map();
 const seen = { d1Batch: 0, r2Put: 0, r2Get: 0 };
+const rows = { read: 0, written: 0, statements: 0 };
 let requests = 0;
+
+const addMeta = (meta) => { if (!meta) return; rows.read += meta.rows_read ?? 0; rows.written += meta.rows_written ?? 0; };
 
 function bump(key) {
   counts.set(key, (counts.get(key) ?? 0) + 1);
@@ -33,7 +36,10 @@ function countedStatement(statement) {
       return (...args) => {
         bump("d1." + String(property));
         const result = value.apply(target, args);
-        return property === "bind" ? countedStatement(result) : result;
+        if (property === "bind") return countedStatement(result);
+        if (property === "first") rows.statements += 1;
+        if (property !== "run" && property !== "all") return result;
+        return result.then((resolved) => { rows.statements += 1; addMeta(resolved.meta); return resolved; });
       };
     },
   });
@@ -49,6 +55,11 @@ function counted(binding, label, hooks = {}) {
         const replacement = hooks[property]?.(args);
         if (replacement !== undefined) return replacement;
         const result = value.apply(target, args);
+        if (label === "d1" && property === "batch") return result.then((results) => {
+          rows.statements += args[0].length;
+          results.forEach((item) => addMeta(item.meta));
+          return results;
+        });
         return property === "prepare" ? countedStatement(result) : result;
       };
     },
@@ -84,13 +95,10 @@ function reply(value, status = 200) {
 export default {
   async fetch(request, env, context) {
     const url = new URL(request.url);
-    if (url.pathname === "/__bench/status") {
-      return reply({ requests, counters: Object.fromEntries(counts) });
-    }
+    if (url.pathname === "/__bench/status") return reply({ requests, counters: Object.fromEntries(counts), rows });
     if (url.pathname === "/__bench/reset") {
-      counts.clear();
-      requests = 0;
-      return reply({ requests, counters: {} });
+      counts.clear(); requests = 0; rows.read = 0; rows.written = 0; rows.statements = 0;
+      return reply({ requests, counters: {}, rows });
     }
     requests += 1;
     const plan = limits(env);

@@ -60,3 +60,21 @@ test("a request without tracing still answers and publishes no mark", async () =
     channel.stop();
   }
 });
+
+test("a throwing diagnostics subscriber cannot change the response", async () => {
+  const channel = diagnostics.channel("stats.observe");
+  const original = channel.publish;
+  channel.publish = () => { throw new Error("publisher failed"); };
+  try {
+    const { env } = environment();
+    const response = await worker.fetch(
+      request("/api/v1/status"),
+      env,
+      tracedContext({ email: "reader@example.test" }),
+    );
+    assert.equal(response.status, 200);
+    assert.equal((await response.json()).protocol, 1);
+  } finally {
+    channel.publish = original;
+  }
+});
