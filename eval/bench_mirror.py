@@ -21,10 +21,10 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import quote, urlsplit
 
-ROOT = Path(__file__).resolve().parents[2]
-SRC_DIR = ROOT / "agent-memory" / "src"
+ROOT = Path(__file__).resolve().parents[1]
+SRC_DIR = ROOT / "src"
 WORK_TMP = ROOT / ".work" / "tmp"
-PERF_GATE = ROOT / "dotfiles" / "base" / ".local" / "bin" / "perf-gate-ready"
+PERF_GATE = shutil.which("perf-gate-ready")
 SCHEMA_VERSION = 1
 QUERY = "retentionmarker"
 sys.path.insert(0, str(SRC_DIR))
@@ -147,8 +147,10 @@ def _load1():
 
 
 def _gate():
+    if PERF_GATE is None:
+        return False
     try:
-        result = subprocess.run(["sh", str(PERF_GATE), "-1"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=30)
+        result = subprocess.run(["sh", PERF_GATE, "-1"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=30)
     except (OSError, subprocess.SubprocessError):
         return False
     return result.returncode == 0
@@ -547,10 +549,10 @@ def _worker_server():
     node = shutil.which("node")
     if node is None:
         raise RuntimeError("node is required for worker benchmarks")
-    worker_dir = ROOT / "agent-memory" / "cloudflare"
+    worker_dir = ROOT / "cloudflare"
     bundle = worker_dir / ".cloudflare" / "output" / "v0" / "workers" / "default" / "bundle" / "index.js"
     if not bundle.is_file():
-        raise RuntimeError("missing worker bundle; run `npm run build` in agent-memory/cloudflare")
+        raise RuntimeError("missing worker bundle; run `npm run build` in cloudflare/")
     process = subprocess.Popen([node, "test/serve.mjs"], cwd=worker_dir, stdout=subprocess.PIPE,
                                stderr=subprocess.PIPE, text=True)
     stdout = process.stdout

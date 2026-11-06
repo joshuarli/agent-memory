@@ -16,10 +16,9 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import quote
 
-ROOT = Path(__file__).resolve().parents[2]
-BIN_DIR = ROOT / "dotfiles" / "base" / ".local" / "bin"
-SRC_DIR = ROOT / "agent-memory" / "src"
-FIXTURES = ROOT / "dotfiles" / "recall-eval"
+ROOT = Path(__file__).resolve().parents[1]
+SRC_DIR = ROOT / "src"
+FIXTURES = ROOT / "eval" / "recall-fixtures"
 WORK_TMP = ROOT / ".work" / "tmp"
 SPLITS = ("dev", "heldout")
 HARNESSES = ("codex", "claude", "muse", "grok")

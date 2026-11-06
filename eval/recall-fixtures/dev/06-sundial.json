@@ -1,0 +1,512 @@
+{
+ "now": "2026-10-20T12:00:00Z",
+ "projects": {
+  "sundial": {
+   "files": {
+    "backup.sh": "#!/bin/sh\nset -eu\n. \"$(dirname \"$0\")/lib/rotate.sh\"\nif [ -n \"${DEST:-}\" ]; then rotate; fi\n",
+    "lib/rotate.sh": "rotate() {\n  mountpoint -q \"$SRC\" || exit 1\n  rsync -a --dry-run --delete \"$SRC/\" \"$DEST/\"\n}\n",
+    "tests/run.sh": "#!/bin/sh\nsh backup.sh\n"
+   }
+  }
+ },
+ "episodes": [
+  {
+   "id": "sd-001",
+   "project": "sundial",
+   "harness": "claude",
+   "age_days": 50,
+   "turns": [
+    {
+     "user": "the nightly backup works when I run it but fails from cron"
+    },
+    {
+     "tool": {
+      "cmd": "tail -3 /var/log/sundial.err",
+      "output": "/opt/sundial/backup.sh: 14: [[: not found\n/opt/sundial/backup.sh: 14: [[: not found\nbackup skipped: DEST unset",
+      "exit": 0
+     }
+    },
+    {
+     "assistant": "Cron runs the script with /bin/sh, which is dash on this host, and the script uses [[ ]] under a #!/bin/sh shebang. My interactive shell is bash so it passes there. Converting to POSIX [ ] tests instead of changing the shebang, because the macOS launchd job also invokes sh."
+    },
+    {
+     "tool": {
+      "cmd": "dash backup.sh",
+      "output": "backup.sh: 14: [[: not found",
+      "exit": 127
+     }
+    },
+    {
+     "tool": {
+      "cmd": "shellcheck -s sh backup.sh lib/rotate.sh && dash backup.sh",
+      "output": "",
+      "exit": 0
+     }
+    }
+   ],
+   "dup_group": "dash-bashism"
+  },
+  {
+   "id": "sd-009",
+   "project": "sundial",
+   "harness": "grok",
+   "age_days": 160,
+   "turns": [
+    {
+     "user": "rotate.sh logs '[[: not found' under cron"
+    },
+    {
+     "tool": {
+      "cmd": "grep -n '\\[\\[' lib/rotate.sh",
+      "output": "7:  if [[ -z \"$SRC\" ]]; then",
+      "exit": 0
+     }
+    },
+    {
+     "assistant": "Same dash vs bash problem: cron uses /bin/sh. Replaced [[ -z ]] with [ -z ]."
+    },
+    {
+     "tool": {
+      "cmd": "dash -n lib/rotate.sh && sh tests/run.sh",
+      "output": "",
+      "exit": 0
+     }
+    }
+   ],
+   "dup_group": "dash-bashism"
+  },
+  {
+   "id": "sd-002",
+   "project": "sundial",
+   "harness": "codex",
+   "age_days": 95,
+   "turns": [
+    {
+     "user": "rotate.sh breaks on the mac mini"
+    },
+    {
+     "tool": {
+      "cmd": "sh lib/rotate.sh",
+      "output": "sed: 1: \"backup.conf\": invalid command code b",
+      "exit": 1
+     }
+    },
+    {
+     "assistant": "BSD sed requires a suffix argument after -i while GNU sed takes none, so sed -i 's/..../' parses the script as the backup suffix. Writing to a temp file and mv avoids in-place sed on both."
+    },
+    {
+     "user": "use the temp file and mv approach, it works on both"
+    },
+    {
+     "tool": {
+      "cmd": "sh lib/rotate.sh && uname -s",
+      "output": "Linux",
+      "exit": 0
+     }
+    }
+   ],
+   "native_id": "a1b2c3"
+  },
+  {
+   "id": "sd-003",
+   "project": "sundial",
+   "harness": "grok",
+   "age_days": 20,
+   "turns": [
+    {
+     "user": "rotate.sh deleted half the files in the destination last night"
+    },
+    {
+     "tool": {
+      "cmd": "mountpoint /mnt/src",
+      "output": "/mnt/src is not a mountpoint",
+      "exit": 1
+     }
+    },
+    {
+     "assistant": "The source mount was missing, so rsync --delete mirrored an empty directory over the destination."
+    },
+    {
+     "user": "From now on rsync --delete must be preceded by a --dry-run in the same script and abort if SRC is not a mountpoint. Never run --delete untested."
+    },
+    {
+     "tool": {
+      "cmd": "sh lib/rotate.sh",
+      "output": "*deleting   photos/a.jpg\n*deleting   photos/b.jpg\nsent 412 bytes  received 19 bytes  (dry run)",
+      "exit": 0
+     }
+    },
+    {
+     "assistant": "Added the mountpoint guard and the dry-run pass."
+    },
+    {
+     "user": "good"
+    },
+    {
+     "assistant": "Done."
+    },
+    {
+     "user": "add a line to the README"
+    },
+    {
+     "assistant": "Added."
+    }
+   ],
+   "malformed": "garbage_line"
+  },
+  {
+   "id": "sd-004",
+   "project": "sundial",
+   "harness": "codex",
+   "age_days": 14,
+   "turns": [
+    {
+     "user": "add a --quiet flag to backup.sh"
+    },
+    {
+     "assistant": "Parsed -q with a case statement and silenced the rsync progress."
+    },
+    {
+     "tool": {
+      "cmd": "sh tests/run.sh",
+      "output": "backup skipped: DEST unset",
+      "exit": 0
+     }
+    }
+   ]
+  },
+  {
+   "id": "sd-005",
+   "project": "sundial",
+   "harness": "claude",
+   "age_days": 70,
+   "turns": [
+    {
+     "user": "rename DEST to BACKUP_DEST in all scripts"
+    },
+    {
+     "tool": {
+      "cmd": "rg -n 'DEST' backup.sh lib tests",
+      "output": "backup.sh:4:if [ -n \"${DEST:-}\" ]; then rotate; fi\nlib/rotate.sh:3:  rsync -a --dry-run --delete \"$SRC/\" \"$DEST/\"",
+      "exit": 0
+     }
+    },
+    {
+     "assistant": "Renamed both occurrences."
+    },
+    {
+     "tool": {
+      "cmd": "sh tests/run.sh",
+      "output": "backup skipped: BACKUP_DEST unset",
+      "exit": 0
+     }
+    }
+   ]
+  },
+  {
+   "id": "sd-006",
+   "project": "sundial",
+   "harness": "grok",
+   "age_days": 120,
+   "turns": [
+    {
+     "user": "shellcheck everything and fix quoting"
+    },
+    {
+     "tool": {
+      "cmd": "shellcheck backup.sh lib/rotate.sh",
+      "output": "In lib/rotate.sh line 3:\n  rsync -a $SRC/ $DEST/\n           ^--^ SC2086: Double quote to prevent globbing and word splitting.",
+      "exit": 1
+     }
+    },
+    {
+     "assistant": "Quoted the variables."
+    },
+    {
+     "tool": {
+      "cmd": "shellcheck backup.sh lib/rotate.sh",
+      "output": "",
+      "exit": 0
+     }
+    }
+   ]
+  },
+  {
+   "id": "sd-007",
+   "project": "sundial",
+   "harness": "muse",
+   "age_days": 55,
+   "turns": [
+    {
+     "user": "write a usage block at the top of backup.sh"
+    },
+    {
+     "user": "make the log file path configurable"
+    },
+    {
+     "user": "make it print the version too"
+    }
+   ]
+  },
+  {
+   "id": "sd-008",
+   "project": "sundial",
+   "harness": "codex",
+   "age_days": 130,
+   "turns": [
+    {
+     "user": "can we use flock to stop overlapping backup runs on the mac mini too?"
+    },
+    {
+     "tool": {
+      "cmd": "command -v flock || echo none; uname -sr",
+      "output": "none\nDarwin 23.5.0",
+      "exit": 0
+     }
+    },
+    {
+     "assistant": "flock(1) is util-linux and is not shipped on macOS. The launchd job uses a mkdir lock directory in lib/lock.sh on purpose, while the Linux cron path uses flock. Both locks exist deliberately; no change needed."
+    }
+   ]
+  },
+  {
+   "id": "sd-010",
+   "project": "sundial",
+   "harness": "claude",
+   "age_days": 200,
+   "turns": [
+    {
+     "user": "mirror SRC to DEST"
+    },
+    {
+     "assistant": "Using rsync -a --delete directly in rotate.sh."
+    },
+    {
+     "tool": {
+      "cmd": "rsync -a --delete /mnt/src/ /mnt/backup/",
+      "output": "sent 1,204 bytes  received 35 bytes\ntotal size is 1.1G  speedup is 888,142.00",
+      "exit": 0
+     }
+    }
+   ]
+  }
+ ],
+ "memories": [
+  {
+   "id": "m-sd-dash",
+   "project": "sundial",
+   "age_days": 49,
+   "action": "Scripts here run under dash from cron and sh from launchd: keep #!/bin/sh and POSIX [ ] tests, never [[ ]]. Check with shellcheck -s sh and dash backup.sh instead of changing the shebang to bash.",
+   "applicability": "Fixing cron-only failures like '[[: not found' or editing shell tests in sundial.",
+   "sources": [
+    {
+     "episode": "sd-001",
+     "contains": "POSIX"
+    }
+   ],
+   "validity": [
+    {
+     "path": "backup.sh",
+     "contains": "#!/bin/sh"
+    }
+   ]
+  }
+ ],
+ "mutations": [
+  {
+   "project": "sundial",
+   "path": "backup.sh",
+   "content": "#!/usr/bin/env bash\nset -eu\nif [[ -n \"${DEST:-}\" ]]; then rotate; fi\n",
+   "commit": true
+  }
+ ],
+ "cases": [
+  {
+   "id": "sd-c1",
+   "split": "dev",
+   "category": "exact_identifier",
+   "project": "sundial",
+   "query": "backup.sh: 14: [[: not found",
+   "expect": "match",
+   "relevant": [
+    "sd-001",
+    "sd-009"
+   ],
+   "stale_memories": [
+    "m-sd-dash"
+   ],
+   "forbidden": [
+    "oe-004"
+   ]
+  },
+  {
+   "id": "sd-c2",
+   "split": "dev",
+   "category": "duplicate",
+   "project": "sundial",
+   "query": "script is fine interactively but fails from cron with a bash-only test",
+   "expect": "match",
+   "relevant": [
+    "sd-001",
+    "sd-009"
+   ],
+   "stale_memories": [
+    "m-sd-dash"
+   ]
+  },
+  {
+   "id": "sd-c3",
+   "split": "dev",
+   "category": "stale_source",
+   "project": "sundial",
+   "query": "can I switch backup.sh to bash to use [[ ]]",
+   "expect": "match",
+   "relevant": [
+    "sd-001"
+   ],
+   "stale_memories": [
+    "m-sd-dash"
+   ]
+  },
+  {
+   "id": "sd-c4",
+   "split": "dev",
+   "category": "path_symbol_command",
+   "project": "sundial",
+   "query": "sed -i",
+   "expect": "match",
+   "relevant": [
+    "sd-002"
+   ],
+   "forbidden": [
+    "fd-004"
+   ]
+  },
+  {
+   "id": "sd-c5",
+   "split": "dev",
+   "category": "paraphrase",
+   "project": "sundial",
+   "query": "script fine on linux dies on the apple box when editing a config in place",
+   "expect": "match",
+   "relevant": [
+    "sd-002"
+   ]
+  },
+  {
+   "id": "sd-c6",
+   "split": "dev",
+   "category": "id_collision",
+   "project": "sundial",
+   "query": "BSD sed needs a suffix after -i",
+   "expect": "match",
+   "relevant": [
+    "sd-002"
+   ],
+   "forbidden": [
+    "ms-003"
+   ]
+  },
+  {
+   "id": "sd-c7",
+   "split": "dev",
+   "category": "trajectory",
+   "project": "sundial",
+   "query": "add rsync --delete mirroring to rotate.sh",
+   "expect": "match",
+   "relevant": [
+    "sd-003"
+   ],
+   "misleading": [
+    "sd-010"
+   ]
+  },
+  {
+   "id": "sd-c8",
+   "split": "dev",
+   "category": "malformed",
+   "project": "sundial",
+   "query": "backup destination got wiped overnight",
+   "expect": "match",
+   "relevant": [
+    "sd-003"
+   ]
+  },
+  {
+   "id": "sd-c9",
+   "split": "dev",
+   "category": "nonobvious_success",
+   "project": "sundial",
+   "query": "can I use flock for the lock on the mac",
+   "expect": "match",
+   "relevant": [
+    "sd-008"
+   ]
+  },
+  {
+   "id": "sd-c10",
+   "split": "dev",
+   "category": "negative",
+   "project": "sundial",
+   "query": "cron job does not run at all after the daylight saving change",
+   "expect": "abstain",
+   "misleading": [
+    "sd-001"
+   ]
+  },
+  {
+   "id": "sd-c11",
+   "split": "dev",
+   "category": "negative",
+   "project": "sundial",
+   "query": "shellcheck SC2155 declare and assign separately",
+   "expect": "abstain",
+   "misleading": [
+    "sd-006"
+   ]
+  },
+  {
+   "id": "sd-c12",
+   "split": "dev",
+   "category": "multi_record",
+   "project": "sundial",
+   "query": "make the backup scripts portable between linux cron and the mac launchd job",
+   "expect": "match",
+   "required": [
+    [
+     "sd-001",
+     "sd-009"
+    ],
+    [
+     "sd-002"
+    ],
+    [
+     "sd-008"
+    ]
+   ],
+   "stale_memories": [
+    "m-sd-dash"
+   ],
+   "relevant": [
+    "sd-001",
+    "sd-009",
+    "sd-002",
+    "sd-008"
+   ]
+  },
+  {
+   "id": "sd-c13",
+   "split": "dev",
+   "category": "contradiction",
+   "project": "sundial",
+   "query": "just run rsync -a --delete from source to dest",
+   "expect": "match",
+   "relevant": [
+    "sd-003"
+   ],
+   "misleading": [
+    "sd-010"
+   ]
+  }
+ ]
+}

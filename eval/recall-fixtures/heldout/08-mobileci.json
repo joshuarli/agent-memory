@@ -1,0 +1,360 @@
+{
+ "now": "2026-10-20T12:00:00Z",
+ "projects": {
+  "mobileci": {
+   "files": {
+    "gradle.properties": "org.gradle.jvmargs=-Xmx3g -XX:MaxMetaspaceSize=512m\nandroid.useAndroidX=true\n",
+    "build.gradle.kts": "plugins { id(\"com.android.application\") version \"7.4.2\" apply false }\n",
+    "app/build.gradle.kts": "android {\n    compileSdk = 34\n}\n",
+    "ci/pipeline.yml": "jobs:\n  build:\n    runs-on: ubuntu-22.04\n    steps:\n      - run: ./gradlew assembleRelease\n",
+    "README.md": "Field-service Android app.\n"
+   },
+   "worktrees": {
+    "agp8": {
+     "files": {
+      "gradle.properties": "org.gradle.jvmargs=-Xmx4g\nandroid.useAndroidX=true\nandroid.nonTransitiveRClass=true\n",
+      "build.gradle.kts": "plugins { id(\"com.android.application\") version \"8.3.0\" apply false }\n",
+      "app/build.gradle.kts": "android {\n    namespace = \"com.example.field\"\n    compileSdk = 34\n}\n"
+     }
+    }
+   }
+  }
+ },
+ "episodes": [
+  {
+   "id": "mc-oom-heap",
+   "project": "mobileci",
+   "harness": "codex",
+   "age_days": 18,
+   "turns": [
+    {
+     "user": "The CI release build fails at dex, local is fine."
+    },
+    {
+     "tool": {
+      "cmd": "./gradlew assembleRelease --no-daemon",
+      "output": "> Task :app:dexBuilderRelease FAILED\nFAILURE: Build failed with an exception.\n* What went wrong:\nExecution failed for task ':app:dexBuilderRelease'.\n> java.lang.OutOfMemoryError: Java heap space\nBUILD FAILED in 4m 12s",
+      "exit": 1
+     }
+    },
+    {
+     "assistant": "The runner has 7 GB and Gradle's default heap is 512m. Setting org.gradle.jvmargs=-Xmx3g in gradle.properties."
+    },
+    {
+     "tool": {
+      "cmd": "./gradlew assembleRelease --no-daemon",
+      "output": "BUILD SUCCESSFUL in 6m 03s\n142 actionable tasks: 142 executed",
+      "exit": 0
+     }
+    }
+   ]
+  },
+  {
+   "id": "mc-agp8",
+   "project": "mobileci",
+   "harness": "claude",
+   "age_days": 70,
+   "turns": [
+    {
+     "user": "Bumped AGP to 8.3 on this branch, the build breaks."
+    },
+    {
+     "tool": {
+      "cmd": "./gradlew :app:assembleDebug",
+      "output": "FAILURE: Build failed with an exception.\n* What went wrong:\nA problem occurred configuring project ':app'.\n> Namespace not specified. Specify a namespace in the module's build file: app/build.gradle.kts.",
+      "exit": 1
+     }
+    },
+    {
+     "assistant": "AGP 8 removed the package attribute of AndroidManifest as the source of the namespace. Adding namespace = \"com.example.field\" to the android block of app/build.gradle.kts."
+    },
+    {
+     "tool": {
+      "cmd": "./gradlew :app:assembleDebug",
+      "output": "BUILD SUCCESSFUL in 1m 48s",
+      "exit": 0
+     }
+    }
+   ],
+   "worktree": "agp8"
+  },
+  {
+   "id": "mc-signing",
+   "project": "mobileci",
+   "harness": "grok",
+   "age_days": 44,
+   "turns": [
+    {
+     "user": "Release build on CI can't find the keystore."
+    },
+    {
+     "assistant": "I added storeFile=/home/dev/release.jks to gradle.properties."
+    },
+    {
+     "user": "No, gradle.properties is committed to the repo. Never put a keystore path or password there. CI injects ANDROID_KEYSTORE_B64 from the secrets store and the pipeline decodes it to $RUNNER_TEMP."
+    },
+    {
+     "tool": {
+      "cmd": "git checkout -- gradle.properties && grep -n KEYSTORE ci/pipeline.yml",
+      "output": "ci/pipeline.yml:14:        run: echo \"$ANDROID_KEYSTORE_B64\" | base64 -d > \"$RUNNER_TEMP/release.jks\"",
+      "exit": 0
+     }
+    },
+    {
+     "assistant": "Reverted, signing config reads the env var."
+    },
+    {
+     "user": "good"
+    }
+   ],
+   "malformed": "partial_tail"
+  },
+  {
+   "id": "mc-emulator",
+   "project": "mobileci",
+   "harness": "codex",
+   "age_days": 88,
+   "turns": [
+    {
+     "user": "Run the instrumented tests on the hosted macOS runners with the hardware accelerated emulator."
+    },
+    {
+     "tool": {
+      "cmd": "emulator -avd pixel6 -no-window -accel-check",
+      "output": "emulator: ERROR: x86_64 emulation currently requires hardware acceleration!\nCPU acceleration status: HVF is not supported on nested virtualization.\nexit 1",
+      "exit": 1
+     }
+    },
+    {
+     "assistant": "Hosted macOS runners are VMs, so the hypervisor framework is unavailable there. The emulator can't start; software emulation takes over 40 minutes for the suite."
+    },
+    {
+     "user": "OK, abandon the emulator on macOS runners. Move the instrumented tests to Firebase Test Lab for now."
+    }
+   ]
+  },
+  {
+   "id": "mc-kvm",
+   "project": "mobileci",
+   "harness": "claude",
+   "age_days": 15,
+   "turns": [
+    {
+     "user": "Where do we run the instrumented UI tests now? I remember Firebase Test Lab."
+    },
+    {
+     "user": "Test Lab is cancelled, quota is gone. We moved to self-hosted Linux runners with KVM and use the android-emulator-runner action, API 34 x86_64."
+    },
+    {
+     "tool": {
+      "cmd": "grep -n 'emulator-runner' -A4 ci/pipeline.yml",
+      "output": "      - uses: reactivecircus/android-emulator-runner@v2\n        with:\n          api-level: 34\n          arch: x86_64",
+      "exit": 0
+     }
+    }
+   ]
+  },
+  {
+   "id": "mc-compose-bump",
+   "project": "mobileci",
+   "harness": "claude",
+   "age_days": 8,
+   "turns": [
+    {
+     "user": "Bump compose BOM."
+    },
+    {
+     "tool": {
+      "cmd": "./gradlew :app:compileDebugKotlin",
+      "output": "BUILD SUCCESSFUL in 52s",
+      "exit": 0
+     }
+    },
+    {
+     "assistant": "Done. Nothing else needs changing."
+    }
+   ]
+  },
+  {
+   "id": "mc-strings-muse",
+   "project": "mobileci",
+   "harness": "muse",
+   "age_days": 6,
+   "turns": [
+    {
+     "user": "add the French strings for the settings screen"
+    },
+    {
+     "user": "check lint for missing translations"
+    },
+    {
+     "user": "ok, that's all for now"
+    }
+   ]
+  },
+  {
+   "id": "mc-lint",
+   "project": "mobileci",
+   "harness": "codex",
+   "age_days": 33,
+   "turns": [
+    {
+     "user": "Run lint on CI and report."
+    },
+    {
+     "tool": {
+      "cmd": "./gradlew lintRelease",
+      "output": "Lint found 0 errors, 4 warnings\nBUILD SUCCESSFUL in 2m 11s",
+      "exit": 0
+     }
+    },
+    {
+     "assistant": "Done. Nothing else needs changing."
+    }
+   ]
+  }
+ ],
+ "memories": [
+  {
+   "id": "m-mc-heap",
+   "project": "mobileci",
+   "age_days": 17,
+   "action": "CI builds need org.gradle.jvmargs=-Xmx3g in gradle.properties; the default heap OOMs in dexBuilder.",
+   "applicability": "dexBuilder fails with java.lang.OutOfMemoryError: Java heap space on the CI runner.",
+   "sources": [
+    {
+     "episode": "mc-oom-heap",
+     "contains": "org.gradle.jvmargs=-Xmx3g in gradle.properties"
+    }
+   ],
+   "validity": [
+    {
+     "path": "gradle.properties",
+     "contains": "org.gradle.jvmargs=-Xmx3g"
+    }
+   ]
+  }
+ ],
+ "mutations": [],
+ "cases": [
+  {
+   "id": "mc-wt-main-heap",
+   "split": "heldout",
+   "category": "worktree",
+   "project": "mobileci",
+   "query": "dexBuilder java heap space on the build server",
+   "expect": "match",
+   "relevant": [
+    "mc-oom-heap"
+   ],
+   "valid_memories": [
+    "m-mc-heap"
+   ]
+  },
+  {
+   "id": "mc-wt-agp8-heap",
+   "split": "heldout",
+   "category": "worktree",
+   "project": "mobileci",
+   "query": "dexBuilder java heap space on the build server",
+   "expect": "match",
+   "relevant": [
+    "mc-oom-heap"
+   ],
+   "worktree": "agp8",
+   "stale_memories": [
+    "m-mc-heap"
+   ]
+  },
+  {
+   "id": "mc-wt-agp8-ns",
+   "split": "heldout",
+   "category": "worktree",
+   "project": "mobileci",
+   "query": "Namespace not specified. Specify a namespace in the module's build file",
+   "expect": "match",
+   "relevant": [
+    "mc-agp8"
+   ],
+   "worktree": "agp8"
+  },
+  {
+   "id": "mc-mal-keystore",
+   "split": "heldout",
+   "category": "malformed",
+   "project": "mobileci",
+   "query": "keystore path ended up in gradle.properties",
+   "expect": "match",
+   "relevant": [
+    "mc-signing"
+   ]
+  },
+  {
+   "id": "mc-para-secrets",
+   "split": "heldout",
+   "category": "paraphrase",
+   "project": "mobileci",
+   "query": "the pipeline cannot reach the credentials needed to sign the release artifact",
+   "expect": "match",
+   "relevant": [
+    "mc-signing"
+   ]
+  },
+  {
+   "id": "mc-traj-emu",
+   "split": "heldout",
+   "category": "trajectory",
+   "project": "mobileci",
+   "query": "can the hardware accelerated emulator run on hosted macOS runners",
+   "expect": "match",
+   "relevant": [
+    "mc-emulator",
+    "mc-kvm"
+   ]
+  },
+  {
+   "id": "mc-temporal-ui",
+   "split": "heldout",
+   "category": "temporal",
+   "project": "mobileci",
+   "query": "where do the instrumented UI tests run",
+   "expect": "match",
+   "relevant": [
+    "mc-kvm"
+   ],
+   "misleading": [
+    "mc-emulator"
+   ]
+  },
+  {
+   "id": "mc-path-jvmargs",
+   "split": "heldout",
+   "category": "path_symbol_command",
+   "project": "mobileci",
+   "query": "gradle.properties org.gradle.jvmargs",
+   "expect": "match",
+   "relevant": [
+    "mc-oom-heap"
+   ],
+   "valid_memories": [
+    "m-mc-heap"
+   ]
+  },
+  {
+   "id": "mc-neg-ksp",
+   "split": "heldout",
+   "category": "negative",
+   "project": "mobileci",
+   "query": "migrate annotation processing from kapt to KSP",
+   "expect": "abstain"
+  },
+  {
+   "id": "mc-neg-crash",
+   "split": "heldout",
+   "category": "negative",
+   "project": "mobileci",
+   "query": "upload the R8 mapping file to the crash reporter on release",
+   "expect": "abstain"
+  }
+ ]
+}

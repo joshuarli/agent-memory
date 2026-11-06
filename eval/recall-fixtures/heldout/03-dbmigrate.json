@@ -1,0 +1,461 @@
+{
+ "now": "2026-10-20T12:00:00Z",
+ "projects": {
+  "dbmigrate": {
+   "files": {
+    "Makefile": "test:\n\tgo test ./...\n\nmigrate-staging:\n\tgo run ./cmd/dbm up --config config.yaml\n",
+    "config.yaml": "database:\n  dsn: postgres://migrate@pgbouncer:6432/app\n  pool_mode: transaction\nlock_timeout: 30s\n",
+    "migrations/0001_init.sql": "CREATE SCHEMA IF NOT EXISTS migrate;\nCREATE TABLE migrate.schema_history (version int primary key, checksum text not null);\n",
+    "cmd/dbm/main.go": "package main\n\nfunc main() {}\n",
+    "go.mod": "module example.invalid/dbm\n\ngo 1.22\n",
+    "README.md": "dbm: forward-only SQL migration runner for PostgreSQL.\n"
+   }
+  }
+ },
+ "episodes": [
+  {
+   "id": "dm-search-path",
+   "project": "dbmigrate",
+   "harness": "codex",
+   "age_days": 35,
+   "turns": [
+    {
+     "user": "dbm up works against local postgres but staging says schema_history is missing."
+    },
+    {
+     "tool": {
+      "cmd": "go run ./cmd/dbm up --config config.yaml",
+      "output": "2026/09/15 10:02:11 applying 0012_add_index.sql\ndbm: ERROR: relation \"schema_history\" does not exist (SQLSTATE 42P01)\nexit status 1",
+      "exit": 1
+     }
+    },
+    {
+     "tool": {
+      "cmd": "psql \"$STAGING_ADMIN_DSN\" -c '\\dt migrate.*'",
+      "output": "              List of relations\n Schema  |      Name       | Type  |  Owner\n---------+-----------------+-------+---------\n migrate | schema_history  | table | migrate\n(1 row)",
+      "exit": 0
+     }
+    },
+    {
+     "assistant": "The table exists in schema migrate. Staging goes through pgbouncer with pool_mode: transaction, so the SET search_path we issue per connection does not survive to the next statement. The runner then looks in public."
+    },
+    {
+     "assistant": "Moving the search path into the DSN as a startup parameter instead: options=-csearch_path%3Dmigrate."
+    },
+    {
+     "tool": {
+      "cmd": "go test ./... && go run ./cmd/dbm up --config config.yaml",
+      "output": "ok  \texample.invalid/dbm/internal/runner\t0.412s\n2026/09/15 10:19:40 applying 0012_add_index.sql\n2026/09/15 10:19:41 ok: 12 migrations applied",
+      "exit": 0
+     }
+    }
+   ]
+  },
+  {
+   "id": "dm-search-path-wrong",
+   "project": "dbmigrate",
+   "harness": "claude",
+   "age_days": 36,
+   "turns": [
+    {
+     "user": "Staging migrate says schema_history does not exist."
+    },
+    {
+     "tool": {
+      "cmd": "go run ./cmd/dbm up --config config.yaml",
+      "output": "dbm: ERROR: relation \"schema_history\" does not exist (SQLSTATE 42P01)\nexit status 1",
+      "exit": 1
+     }
+    },
+    {
+     "assistant": "I created the table by hand in public with CREATE TABLE schema_history (...) and the run proceeds. This is fixed."
+    },
+    {
+     "tool": {
+      "cmd": "go run ./cmd/dbm up --config config.yaml",
+      "output": "2026/09/14 16:40:02 applying 0012_add_index.sql\ndbm: checksum mismatch for version 3: stored 'a41f9' computed '7c20d'\nexit status 1",
+      "exit": 1
+     }
+    }
+   ]
+  },
+  {
+   "id": "dm-lock-timeout",
+   "project": "dbmigrate",
+   "harness": "claude",
+   "age_days": 60,
+   "turns": [
+    {
+     "user": "Deploy is stuck, migrate prints a lock timeout."
+    },
+    {
+     "tool": {
+      "cmd": "go run ./cmd/dbm up --config config.yaml",
+      "output": "dbm: lock timeout: pg_advisory_lock(7203947) not acquired after 30s\nexit status 1",
+      "exit": 1
+     }
+    },
+    {
+     "tool": {
+      "cmd": "psql \"$STAGING_ADMIN_DSN\" -c \"select pid, state, xact_start, left(query,40) from pg_stat_activity where state like 'idle in%'\"",
+      "output": " pid  |        state        |      xact_start       |                  left\n------+---------------------+-----------------------+----------------------------------------\n 8841 | idle in transaction | 2026-09-02 08:11:37   | select pg_advisory_lock(7203947)\n(1 row)",
+      "exit": 0
+     }
+    },
+    {
+     "assistant": "Session 8841 holds the advisory lock from a psql someone left open. I can pg_terminate_backend(8841)."
+    },
+    {
+     "user": "Do not terminate it. Check who owns it with pg_stat_activity first and ask in the DBA channel. Last time a kill rolled back a half-finished backfill."
+    },
+    {
+     "tool": {
+      "cmd": "psql \"$STAGING_ADMIN_DSN\" -c \"select usename, client_addr from pg_stat_activity where pid=8841\"",
+      "output": " usename | client_addr\n---------+-------------\n dba_ana | 10.4.2.19",
+      "exit": 0
+     }
+    }
+   ]
+  },
+  {
+   "id": "dm-checksum-decision",
+   "project": "dbmigrate",
+   "harness": "grok",
+   "age_days": 100,
+   "turns": [
+    {
+     "user": "Migration 0007 has a typo in a column default. Can I just edit the file in place?"
+    },
+    {
+     "tool": {
+      "cmd": "rg -n 'checksum' internal/runner/*.go",
+      "output": "internal/runner/apply.go:57:    if stored != computed { return fmt.Errorf(\"checksum mismatch for version %d\", v) }",
+      "exit": 0
+     }
+    },
+    {
+     "assistant": "Editing 0007 changes its checksum. Every database that already applied it, including three team staging DBs, would fail the mismatch check, and force-updating stored checksums hides real drift."
+    },
+    {
+     "user": "Agreed, do not rewrite applied migrations. Ship the fix as a new forward migration 0012 and leave 0007 untouched."
+    }
+   ]
+  },
+  {
+   "id": "dm-down-auto",
+   "project": "dbmigrate",
+   "harness": "claude",
+   "age_days": 200,
+   "turns": [
+    {
+     "user": "How do we undo migration 0004 on a dev database?"
+    },
+    {
+     "tool": {
+      "cmd": "go run ./cmd/dbm down --auto --to 3",
+      "output": "2026/03/30 11:20:09 generated reverse DDL for 0004 (drop column notes)\n2026/03/30 11:20:09 ok: rolled back to version 3",
+      "exit": 0
+     }
+    },
+    {
+     "assistant": "dbm down --auto generates the reverse DDL from the forward migration, so no .down.sql file is needed."
+    }
+   ]
+  },
+  {
+   "id": "dm-no-auto-down",
+   "project": "dbmigrate",
+   "harness": "codex",
+   "age_days": 15,
+   "turns": [
+    {
+     "user": "dbm down --auto is rejected now, what changed?"
+    },
+    {
+     "tool": {
+      "cmd": "go run ./cmd/dbm down --auto --to 3",
+      "output": "dbm: unknown flag: --auto\nusage: dbm down [--to N] (requires NNNN_name.down.sql)\nexit status 2",
+      "exit": 2
+     }
+    },
+    {
+     "user": "We removed auto-generated reverse DDL in 0.9, it dropped data twice. Down migrations are hand-written NNNN_name.down.sql files now, reviewed like forward ones."
+    },
+    {
+     "tool": {
+      "cmd": "ls migrations | head -n 6",
+      "output": "0001_init.sql\n0002_users.sql\n0002_users.down.sql\n0003_orders.sql\n0003_orders.down.sql",
+      "exit": 0
+     }
+    }
+   ]
+  },
+  {
+   "id": "dm-gofmt-muse",
+   "project": "dbmigrate",
+   "harness": "muse",
+   "age_days": 14,
+   "turns": [
+    {
+     "user": "run gofmt on internal/runner"
+    },
+    {
+     "user": "and tidy go.mod"
+    },
+    {
+     "user": "ok, that's all for now"
+    }
+   ]
+  },
+  {
+   "id": "dm-readme",
+   "project": "dbmigrate",
+   "harness": "grok",
+   "age_days": 6,
+   "turns": [
+    {
+     "user": "Explain how to run the migration tests."
+    },
+    {
+     "tool": {
+      "cmd": "go test ./internal/runner -run TestApply -v",
+      "output": "=== RUN   TestApply\n--- PASS: TestApply (0.03s)\nPASS\nok  \texample.invalid/dbm/internal/runner\t0.041s",
+      "exit": 0
+     }
+    },
+    {
+     "assistant": "Added a Testing section to the README."
+    }
+   ]
+  },
+  {
+   "id": "dm-bump-pgx",
+   "project": "dbmigrate",
+   "harness": "codex",
+   "age_days": 22,
+   "turns": [
+    {
+     "user": "Bump pgx to the latest v5 patch release."
+    },
+    {
+     "tool": {
+      "cmd": "go get github.com/jackc/pgx/v5@v5.7.2 && go build ./...",
+      "output": "go: upgraded github.com/jackc/pgx/v5 v5.7.1 => v5.7.2\n",
+      "exit": 0
+     }
+    },
+    {
+     "tool": {
+      "cmd": "go test ./...",
+      "output": "ok  \texample.invalid/dbm/internal/runner\t0.388s",
+      "exit": 0
+     }
+    }
+   ]
+  }
+ ],
+ "memories": [
+  {
+   "id": "m-dm-pool",
+   "project": "dbmigrate",
+   "age_days": 34,
+   "action": "Staging runs behind pgbouncer with pool_mode: transaction, which drops per-connection SET search_path. Put the search path in the DSN (options=-csearch_path%3Dmigrate) instead of issuing SET.",
+   "applicability": "Migrate on staging fails with relation schema_history does not exist while local works.",
+   "sources": [
+    {
+     "episode": "dm-search-path",
+     "contains": "options=-csearch_path%3Dmigrate"
+    }
+   ],
+   "validity": [
+    {
+     "path": "config.yaml",
+     "contains": "pool_mode: transaction"
+    }
+   ]
+  }
+ ],
+ "mutations": [
+  {
+   "project": "dbmigrate",
+   "path": "config.yaml",
+   "content": "database:\n  dsn: postgres://migrate@pg-direct:5432/app?options=-csearch_path%3Dmigrate\n  pool_mode: session\nlock_timeout: 30s\n",
+   "commit": true
+  }
+ ],
+ "cases": [
+  {
+   "id": "dm-exact-42p01",
+   "split": "heldout",
+   "category": "exact_identifier",
+   "project": "dbmigrate",
+   "query": "ERROR: relation \"schema_history\" does not exist (SQLSTATE 42P01)",
+   "expect": "match",
+   "relevant": [
+    "dm-search-path"
+   ],
+   "misleading": [
+    "dm-search-path-wrong",
+    "ld-template-db"
+   ]
+  },
+  {
+   "id": "dm-exact-advisory",
+   "split": "heldout",
+   "category": "exact_identifier",
+   "project": "dbmigrate",
+   "query": "pg_advisory_lock(7203947) not acquired",
+   "expect": "match",
+   "relevant": [
+    "dm-lock-timeout"
+   ]
+  },
+  {
+   "id": "dm-sim-42p01",
+   "split": "heldout",
+   "category": "similar_project",
+   "project": "dbmigrate",
+   "query": "migrate on staging fails: relation does not exist (42P01)",
+   "expect": "match",
+   "relevant": [
+    "dm-search-path"
+   ],
+   "misleading": [
+    "ld-template-db",
+    "dm-search-path-wrong"
+   ]
+  },
+  {
+   "id": "dm-contra-handtable",
+   "split": "heldout",
+   "category": "contradiction",
+   "project": "dbmigrate",
+   "query": "schema_history missing on staging, I created the table by hand in public",
+   "expect": "match",
+   "relevant": [
+    "dm-search-path"
+   ],
+   "misleading": [
+    "dm-search-path-wrong"
+   ]
+  },
+  {
+   "id": "dm-para-hung",
+   "split": "heldout",
+   "category": "paraphrase",
+   "project": "dbmigrate",
+   "query": "someone left a session open and releases are blocked, should I just kill it",
+   "expect": "match",
+   "relevant": [
+    "dm-lock-timeout"
+   ]
+  },
+  {
+   "id": "dm-traj-edit",
+   "split": "heldout",
+   "category": "trajectory",
+   "project": "dbmigrate",
+   "query": "can I fix a typo directly in an already applied migration file",
+   "expect": "match",
+   "relevant": [
+    "dm-checksum-decision"
+   ]
+  },
+  {
+   "id": "dm-path-down",
+   "split": "heldout",
+   "category": "path_symbol_command",
+   "project": "dbmigrate",
+   "query": "dbm down --auto --to 3",
+   "expect": "match",
+   "relevant": [
+    "dm-no-auto-down"
+   ],
+   "misleading": [
+    "dm-down-auto"
+   ]
+  },
+  {
+   "id": "dm-temporal-down",
+   "split": "heldout",
+   "category": "temporal",
+   "project": "dbmigrate",
+   "query": "how do I roll back a migration on dev",
+   "expect": "match",
+   "relevant": [
+    "dm-no-auto-down"
+   ],
+   "misleading": [
+    "dm-down-auto"
+   ]
+  },
+  {
+   "id": "dm-stale-pool",
+   "split": "heldout",
+   "category": "stale_source",
+   "project": "dbmigrate",
+   "query": "pool_mode setting for running migrations on staging",
+   "expect": "match",
+   "relevant": [
+    "dm-search-path"
+   ],
+   "stale_memories": [
+    "m-dm-pool"
+   ]
+  },
+  {
+   "id": "dm-multi",
+   "split": "heldout",
+   "category": "multi_record",
+   "project": "dbmigrate",
+   "query": "staging deploy blocked: schema_history missing and an advisory lock timeout",
+   "expect": "match",
+   "relevant": [
+    "dm-search-path",
+    "dm-lock-timeout"
+   ],
+   "required": [
+    [
+     "dm-search-path"
+    ],
+    [
+     "dm-lock-timeout"
+    ]
+   ],
+   "misleading": [
+    "dm-search-path-wrong"
+   ]
+  },
+  {
+   "id": "dm-neg-mysql",
+   "split": "heldout",
+   "category": "negative",
+   "project": "dbmigrate",
+   "query": "add a MySQL dialect to the migration runner",
+   "expect": "abstain"
+  },
+  {
+   "id": "dm-neg-batch",
+   "split": "heldout",
+   "category": "negative",
+   "project": "dbmigrate",
+   "query": "speed up applying a migration that backfills a million rows",
+   "expect": "abstain"
+  },
+  {
+   "id": "dm-sim-pooler",
+   "category": "similar_project",
+   "project": "dbmigrate",
+   "query": "42P01 only on staging behind the connection pooler, local runs fine",
+   "expect": "match",
+   "relevant": [
+    "dm-search-path"
+   ],
+   "misleading": [
+    "ld-template-db",
+    "dm-search-path-wrong"
+   ],
+   "split": "heldout"
+  }
+ ]
+}

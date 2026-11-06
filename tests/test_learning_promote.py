@@ -1,8 +1,8 @@
 import hashlib
 import importlib.util
 import os
-import shutil
 import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -10,9 +10,11 @@ from typing import Any
 from unittest.mock import patch
 
 
-ROOT = Path(__file__).resolve().parents[2]
+ROOT = Path(__file__).resolve().parents[1]
 WORK_TMP = ROOT / ".work/tmp"
-MODULE_PATH = ROOT / "agent-memory/src/agent_memory/learning_promote.py"
+sys.path.insert(0, str(ROOT / "tests"))
+import testkit  # noqa: E402
+MODULE_PATH = testkit.SRC / "agent_memory" / "learning_promote.py"
 SPEC = importlib.util.spec_from_file_location("agent_learning_promote", MODULE_PATH)
 assert SPEC is not None
 promotion = importlib.util.module_from_spec(SPEC)
@@ -49,13 +51,7 @@ class PromotionTest(unittest.TestCase):
         run(["git", "init", "-b", "main"], self.repo)
         (self.repo / ".git/info/exclude").write_text(".work/\n", encoding="utf-8")
         (self.repo / "dotfiles/base/.agents/skills/root-cause").mkdir(parents=True)
-        (self.repo / "dotfiles/base/.local/bin").mkdir(parents=True)
-        (self.repo / "dotfiles").mkdir(exist_ok=True)
-        shutil.copy2(ROOT / "dotfiles/skills-check.sh", self.repo / "dotfiles/skills-check.sh")
-        shutil.copy2(
-            ROOT / "tools/mdtool/src/mdtool.py",
-            self.repo / "dotfiles/base/.local/bin/mdtool",
-        )
+        testkit.install_checker(self.repo)
         (self.repo / "dotfiles/base/.agents/skills/root-cause/SKILL.md").write_text(
             self.skill_text(), encoding="utf-8"
         )

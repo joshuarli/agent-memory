@@ -14,10 +14,10 @@ import tempfile
 import time
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parents[2]
+ROOT = Path(__file__).resolve().parents[1]
 WORK_TMP = ROOT / ".work" / "tmp"
 WORK_TMP.mkdir(parents=True, exist_ok=True)
-SRC_DIR = ROOT / "agent-memory" / "src"
+SRC_DIR = ROOT / "src"
 sys.path.insert(0, str(SRC_DIR))
 STORE_SPEC = importlib.util.spec_from_file_location("agent_memory.store", SRC_DIR / "agent_memory" / "store.py")
 assert STORE_SPEC is not None
@@ -28,15 +28,7 @@ STORE_SPEC.loader.exec_module(STORE_MODULE)
 Store = STORE_MODULE.Store
 normalize = STORE_MODULE.normalize
 project_identity = STORE_MODULE.project_identity
-SKILL_USAGE_PATH = ROOT / "tools/skill-usage/src/skill_usage.py"
-SKILL_USAGE_LOADER = importlib.machinery.SourceFileLoader("skill_usage_bench", str(SKILL_USAGE_PATH))
-SPEC = importlib.util.spec_from_loader("skill_usage_bench", SKILL_USAGE_LOADER)  # ty: ignore[invalid-argument-type] # typeshed LoaderProtocol still requires legacy load_module, which spec_from_loader never calls
-assert SPEC is not None
-SKILL_USAGE = importlib.util.module_from_spec(SPEC)
-assert SPEC.loader is not None
-sys.modules[SPEC.name] = SKILL_USAGE
-SPEC.loader.exec_module(SKILL_USAGE)
-PERF_GATE = ROOT / "dotfiles" / "base" / ".local" / "bin" / "perf-gate-ready"
+PERF_GATE = shutil.which("perf-gate-ready")
 QUERY = "retentionmarker"
 
 
@@ -105,14 +97,26 @@ def _direct_search(root, query):
     return matches, bytes_read
 
 
-def _skill_usage(root):
-    usage = SKILL_USAGE.Usage(False)
-    SKILL_USAGE.scan_codex(root, 0, usage)
+def _load_skill_usage(path):
+    loader = importlib.machinery.SourceFileLoader("skill_usage_bench", str(path))
+    spec = importlib.util.spec_from_loader("skill_usage_bench", loader)  # ty: ignore[invalid-argument-type] # typeshed LoaderProtocol still requires legacy load_module, which spec_from_loader never calls
+    assert spec is not None
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    loader.exec_module(module)
+    return module
+
+
+def _skill_usage(module, root):
+    usage = module.Usage(False)
+    module.scan_codex(root, 0, usage)
     return len(usage.sessions["codex"]), len(usage.loaded["benchmark"])
 
 
 def _gate(after=False):
-    args = ["sh", str(PERF_GATE)] + (["-1"] if after else [])
+    if PERF_GATE is None:
+        return False
+    args = ["sh", PERF_GATE] + (["-1"] if after else [])
     result = subprocess.run(args, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
     return result.returncode == 0
 
@@ -136,14 +140,7 @@ def _work_counters(stats_list):
     return {key: sum(stats[key] for stats in stats_list) for key in ("stat_operations", "content_opens", "bytes_read", "git_processes", "sqlite_changes")}
 
 
-def _load_baseline(ref, scratch_root):
-    result = subprocess.run(
-        ["git", "show", ref + ":dotfiles/base/.local/bin/agent_session_store.py"],
-        check=True,
-        stdout=subprocess.PIPE,
-    )
-    path = Path(scratch_root) / "agent_session_store_baseline.py"
-    path.write_bytes(result.stdout)
+def _load_baseline(path):
     spec = importlib.util.spec_from_file_location("agent_session_store_baseline", path)
     assert spec is not None
     module = importlib.util.module_from_spec(spec)
@@ -281,9 +278,9 @@ def run(args):
         mixed_project_ids = project_ids[:mixed_count]
         source_bytes = sum(path.stat().st_size for path in transcripts.rglob("rollout-*.jsonl"))
         direct, direct_bytes = _direct_search(transcripts, QUERY)
-        usage_sessions, usage_loads = _skill_usage(transcripts)
+        usage_sessions, usage_loads = _skill_usage(_load_skill_usage(args.skill_usage), transcripts) if args.skill_usage else (None, None)
         state = root / "state"
-        baseline_module = _load_baseline(args.baseline_ref, root) if args.baseline_ref else None
+        baseline_module = _load_baseline(args.baseline_file) if args.baseline_file else None
         baseline_state = root / "baseline-state"
         baseline_context = baseline_module.Store(baseline_state) if baseline_module else contextlib.nullcontext(None)
         baseline_work = {}
@@ -386,7 +383,7 @@ def run(args):
                 "mixed_enabled_noop": _work_counters([mixed_noop]),
                 "missed_hook_reconciliation": _work_counters(observed_refreshes),
             },
-            "baseline_ref": args.baseline_ref,
+            "baseline_file": str(args.baseline_file) if args.baseline_file else None,
             "baseline_refresh_work": baseline_work or None,
             "index": {"build_sessions": fresh["sessions_indexed"], "build_events_added": fresh["events_added"], "increment_events_added": append["events_added"], "unchanged_events_added": unchanged["events_added"], "database_bytes": database_bytes, "database_bytes_after_increment": final_database_bytes, "database_bytes_with_learning_tables": database_bytes_with_learning},
             "mixed_history_database_bytes": {"candidate": mixed_database_bytes, "baseline": mixed_baseline_database_bytes},
@@ -459,7 +456,8 @@ def main(argv=None):
     parser.add_argument("--sessions", type=int, default=1000)
     parser.add_argument("--messages", type=int, default=10)
     parser.add_argument("--projects", type=int, default=20)
-    parser.add_argument("--baseline-ref", help="compare with a committed agent_session_store.py revision")
+    parser.add_argument("--baseline-file", type=Path, help="compare with an earlier agent_session_store.py or store.py file")
+    parser.add_argument("--skill-usage", type=Path, help="also check a skill_usage.py consumer's scan against the same corpus")
     parser.add_argument("--timings", action="store_true", help="run five perf-gated samples per case")
     args = parser.parse_args(argv)
     try:

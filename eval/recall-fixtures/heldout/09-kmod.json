@@ -1,0 +1,377 @@
+{
+ "now": "2026-10-20T12:00:00Z",
+ "projects": {
+  "kmod": {
+   "files": {
+    "Makefile": "KDIR ?= /lib/modules/$(shell uname -r)/build\nobj-m += vring.o\nvring-y := src/vring.o\n\nall:\n\tmake -C $(KDIR) M=$(PWD) modules\n",
+    "src/vring.c": "#include <linux/module.h>\nMODULE_LICENSE(\"GPL\");\n",
+    "include/vring.h": "struct vring_cfg { __u32 entries; __u32 flags; };\n#define VRING_SET_CFG _IOWR('V', 3, struct vring_cfg)\n",
+    "README.md": "Out-of-tree virtio ring helper module.\n"
+   }
+  }
+ },
+ "episodes": [
+  {
+   "id": "km-insmod",
+   "project": "kmod",
+   "harness": "claude",
+   "age_days": 27,
+   "turns": [
+    {
+     "user": "insmod refuses my freshly built module after the host updated."
+    },
+    {
+     "tool": {
+      "cmd": "sudo insmod vring.ko",
+      "output": "insmod: ERROR: could not insert module vring.ko: Invalid module format",
+      "exit": 1
+     }
+    },
+    {
+     "tool": {
+      "cmd": "dmesg | tail -n 2",
+      "output": "[ 4021.331] vring: version magic '6.1.0-18-amd64 SMP preempt mod_unload modversions ' should be '6.1.0-21-amd64 SMP preempt mod_unload modversions '",
+      "exit": 0
+     }
+    },
+    {
+     "assistant": "The module was built against the 6.1.0-18 headers; the running kernel is 6.1.0-21. Rebuilding with KDIR pointing at the running kernel's build tree."
+    },
+    {
+     "tool": {
+      "cmd": "make clean && make KDIR=/lib/modules/$(uname -r)/build && sudo insmod vring.ko && lsmod | grep vring",
+      "output": "vring                  16384  0",
+      "exit": 0
+     }
+    }
+   ],
+   "native_id": "b7e24c90"
+  },
+  {
+   "id": "km-spinlock",
+   "project": "kmod",
+   "harness": "codex",
+   "age_days": 66,
+   "turns": [
+    {
+     "user": "dmesg shows a BUG when the ring is reset from the irq path."
+    },
+    {
+     "tool": {
+      "cmd": "dmesg | tail -n 6",
+      "output": "BUG: sleeping function called from invalid context at include/linux/sched/mm.h:274\nin_atomic(): 1, irqs_disabled(): 1, non_block: 0, pid: 0, name: swapper/2\nCall Trace:\n vring_reset+0x6d/0x120 [vring]\n __kmalloc+0x1c8/0x2f0",
+      "exit": 0
+     }
+    },
+    {
+     "assistant": "vring_reset calls kmalloc(GFP_KERNEL) while holding spin_lock_irqsave. GFP_KERNEL may sleep. Switching to GFP_ATOMIC for that allocation."
+    },
+    {
+     "tool": {
+      "cmd": "make && sudo rmmod vring; sudo insmod vring.ko && ./tests/reset_storm.sh && dmesg | grep -c BUG",
+      "output": "reset_storm: 10000 resets ok\n0",
+      "exit": 0
+     }
+    }
+   ]
+  },
+  {
+   "id": "km-spinlock-wrong",
+   "project": "kmod",
+   "harness": "grok",
+   "age_days": 67,
+   "turns": [
+    {
+     "user": "kernel BUG sleeping function called from invalid context in vring_reset."
+    },
+    {
+     "assistant": "Replacing the spinlock with a mutex avoids the sleeping complaint, so that fixes it."
+    },
+    {
+     "tool": {
+      "cmd": "make && sudo insmod vring.ko && ./tests/reset_storm.sh; dmesg | tail -n 3",
+      "output": "BUG: scheduling while atomic: swapper/2/0/0x00010002\nvring: mutex_lock called from hard irq context\nreset_storm: hung after 211 resets",
+      "exit": 1
+     }
+    }
+   ]
+  },
+  {
+   "id": "km-ioctl",
+   "project": "kmod",
+   "harness": "grok",
+   "age_days": 105,
+   "turns": [
+    {
+     "user": "Can I add a field to struct vring_cfg? Is that safe for existing userspace?"
+    },
+    {
+     "tool": {
+      "cmd": "rg -n '_IOWR|vring_cfg' include/ src/ tools/",
+      "output": "include/vring.h:2:#define VRING_SET_CFG _IOWR('V', 3, struct vring_cfg)\nsrc/vring.c:140:    case VRING_SET_CFG: copy_from_user(&cfg, arg, sizeof(cfg));\ntools/vringctl.c:22:    ioctl(fd, VRING_SET_CFG, &cfg);",
+      "exit": 0
+     }
+    },
+    {
+     "assistant": "The ioctl request number encodes sizeof(struct vring_cfg), so growing the struct changes the number. Old binaries then get ENOTTY from the kernel. A new field needs a new ioctl number with its own struct version, or the userspace tool and library must be rebuilt in lockstep."
+    },
+    {
+     "user": "Then add VRING_SET_CFG2 and keep the old one. We ship vringctl separately."
+    }
+   ]
+  },
+  {
+   "id": "km-checkpatch-muse",
+   "project": "kmod",
+   "harness": "muse",
+   "age_days": 9,
+   "turns": [
+    {
+     "user": "run scripts/checkpatch.pl on the diff"
+    },
+    {
+     "user": "fix the whitespace complaints"
+    },
+    {
+     "user": "ok, that's all for now"
+    }
+   ]
+  },
+  {
+   "id": "km-readme",
+   "project": "kmod",
+   "harness": "codex",
+   "age_days": 12,
+   "turns": [
+    {
+     "user": "Document building the module."
+    },
+    {
+     "tool": {
+      "cmd": "make",
+      "output": "make -C /lib/modules/6.1.0-21-amd64/build M=/work/kmod modules\n  CC [M]  src/vring.o\n  LD [M]  vring.ko",
+      "exit": 0
+     }
+    },
+    {
+     "assistant": "Done. Nothing else needs changing."
+    }
+   ]
+  },
+  {
+   "id": "km-kconfig",
+   "project": "kmod",
+   "harness": "claude",
+   "age_days": 40,
+   "turns": [
+    {
+     "user": "Does the module need a Kconfig entry?"
+    },
+    {
+     "tool": {
+      "cmd": "ls",
+      "output": "Makefile\nREADME.md\ninclude\nsrc",
+      "exit": 0
+     }
+    },
+    {
+     "assistant": "Out-of-tree builds don't use Kconfig; nothing to add."
+    }
+   ]
+  },
+  {
+   "id": "km-clean",
+   "project": "kmod",
+   "harness": "codex",
+   "age_days": 4,
+   "turns": [
+    {
+     "user": "make clean should remove vring.ko too."
+    },
+    {
+     "tool": {
+      "cmd": "make clean && ls",
+      "output": "Makefile\nREADME.md\ninclude\nsrc",
+      "exit": 0
+     }
+    },
+    {
+     "assistant": "Done. Nothing else needs changing."
+    }
+   ]
+  }
+ ],
+ "memories": [
+  {
+   "id": "m-km-kdir",
+   "project": "kmod",
+   "age_days": 26,
+   "action": "Build vring.ko against the running kernel: make KDIR=/lib/modules/$(uname -r)/build. Rebuild after every host kernel update, otherwise insmod reports Invalid module format (version magic mismatch).",
+   "applicability": "insmod: Invalid module format after a kernel update.",
+   "sources": [
+    {
+     "episode": "km-insmod",
+     "contains": "make clean && make KDIR=/lib/modules/$(uname -r)/build"
+    }
+   ],
+   "validity": [
+    {
+     "path": "Makefile",
+     "contains": "KDIR ?= /lib/modules/$(shell uname -r)/build"
+    }
+   ]
+  }
+ ],
+ "mutations": [
+  {
+   "project": "kmod",
+   "path": "README.md",
+   "content": "Out-of-tree virtio ring helper module.\n\nTested on 6.1.\n",
+   "commit": true
+  }
+ ],
+ "cases": [
+  {
+   "id": "km-exact-format",
+   "split": "heldout",
+   "category": "exact_identifier",
+   "project": "kmod",
+   "query": "version magic '6.1.0-18-amd64 SMP preempt mod_unload modversions'",
+   "expect": "match",
+   "relevant": [
+    "km-insmod"
+   ]
+  },
+  {
+   "id": "km-coll-insmod",
+   "split": "heldout",
+   "category": "id_collision",
+   "project": "kmod",
+   "query": "insmod: ERROR: could not insert module vring.ko: Invalid module format",
+   "expect": "match",
+   "relevant": [
+    "km-insmod"
+   ],
+   "forbidden": [
+    "ts-proj"
+   ]
+  },
+  {
+   "id": "km-para-update",
+   "split": "heldout",
+   "category": "paraphrase",
+   "project": "kmod",
+   "query": "my compiled driver is rejected after the OS got patched",
+   "expect": "match",
+   "relevant": [
+    "km-insmod"
+   ],
+   "valid_memories": [
+    "m-km-kdir"
+   ]
+  },
+  {
+   "id": "km-contra-mutex",
+   "split": "heldout",
+   "category": "contradiction",
+   "project": "kmod",
+   "query": "BUG: sleeping function called from invalid context in vring_reset, swapped spinlock for a mutex",
+   "expect": "match",
+   "relevant": [
+    "km-spinlock"
+   ],
+   "misleading": [
+    "km-spinlock-wrong"
+   ]
+  },
+  {
+   "id": "km-nonobv-struct",
+   "split": "heldout",
+   "category": "nonobvious_success",
+   "project": "kmod",
+   "query": "can I grow the config struct without breaking old userspace binaries",
+   "expect": "match",
+   "relevant": [
+    "km-ioctl"
+   ]
+  },
+  {
+   "id": "km-path-iowr",
+   "split": "heldout",
+   "category": "path_symbol_command",
+   "project": "kmod",
+   "query": "_IOWR('V', 3, struct vring_cfg)",
+   "expect": "match",
+   "relevant": [
+    "km-ioctl"
+   ]
+  },
+  {
+   "id": "km-valid-kdir",
+   "split": "heldout",
+   "category": "valid_after_unrelated_commit",
+   "project": "kmod",
+   "query": "build against the running kernel headers",
+   "expect": "match",
+   "relevant": [
+    "km-insmod"
+   ],
+   "valid_memories": [
+    "m-km-kdir"
+   ]
+  },
+  {
+   "id": "km-multi",
+   "split": "heldout",
+   "category": "multi_record",
+   "project": "kmod",
+   "query": "module load fails after update and a BUG during irq reset",
+   "expect": "match",
+   "relevant": [
+    "km-insmod",
+    "km-spinlock"
+   ],
+   "required": [
+    [
+     "km-insmod"
+    ],
+    [
+     "km-spinlock"
+    ]
+   ],
+   "misleading": [
+    "km-spinlock-wrong"
+   ]
+  },
+  {
+   "id": "km-neg-devm",
+   "split": "heldout",
+   "category": "negative",
+   "project": "kmod",
+   "query": "convert the driver to devm managed resources",
+   "expect": "abstain"
+  },
+  {
+   "id": "km-neg-debugfs",
+   "split": "heldout",
+   "category": "negative",
+   "project": "kmod",
+   "query": "expose ring statistics through debugfs",
+   "expect": "abstain"
+  },
+  {
+   "id": "km-contra-atomic",
+   "category": "contradiction",
+   "project": "kmod",
+   "query": "switched to a mutex in vring_reset but now BUG: scheduling while atomic",
+   "expect": "match",
+   "relevant": [
+    "km-spinlock"
+   ],
+   "misleading": [
+    "km-spinlock-wrong"
+   ],
+   "split": "heldout"
+  }
+ ]
+}

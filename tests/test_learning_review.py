@@ -15,15 +15,17 @@ from typing import Any
 from unittest import mock
 
 
-SCRIPT = Path(__file__).resolve().parents[2] / "agent-memory/src/agent_memory/learning_review.py"
+ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / "tests"))
+import testkit  # noqa: E402
+SCRIPT = testkit.SRC / "agent_memory" / "learning_review.py"
 SPEC = importlib.util.spec_from_file_location("agent_memory.learning_review", SCRIPT)
 assert SPEC is not None
 REVIEW = importlib.util.module_from_spec(SPEC)
 assert SPEC.loader is not None
 sys.modules[SPEC.name] = REVIEW
 SPEC.loader.exec_module(REVIEW)
-REPOSITORY = SCRIPT.parents[3]
-TMP_ROOT = REPOSITORY / ".work" / "tmp"
+TMP_ROOT = ROOT / ".work" / "tmp"
 
 
 def sample_context(**extra) -> dict[str, Any]:
@@ -90,7 +92,7 @@ class CodexReviewerTests(unittest.TestCase):
             "CODEX_HOME": str(self.root / "codex-home"),
             "LANG": "C.UTF-8",
         }
-        self.reviewer = REVIEW.CodexReviewer(REPOSITORY, self.root / "state")
+        self.reviewer = REVIEW.CodexReviewer(testkit.create_usr_target(self.root / "usr"), self.root / "state")
 
     def fake_codex(self):
         feature_lines = "\n".join(feature + " stable true" for feature in REVIEW.DISABLED_FEATURES)

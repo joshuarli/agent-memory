@@ -10,10 +10,12 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-ROOT = Path(__file__).resolve().parents[2]
+ROOT = Path(__file__).resolve().parents[1]
 WORK_TMP = ROOT / ".work" / "tmp"
 WORK_TMP.mkdir(parents=True, exist_ok=True)
-SRC_DIR = ROOT / "agent-memory" / "src"
+sys.path.insert(0, str(ROOT / "tests"))
+import testkit  # noqa: E402
+SRC_DIR = testkit.SRC
 sys.path.insert(0, str(SRC_DIR))
 MODULE_PATH = SRC_DIR / "agent_memory" / "store.py"
 SPEC = importlib.util.spec_from_file_location("agent_session_store", MODULE_PATH)

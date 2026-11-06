@@ -1,0 +1,459 @@
+{
+ "now": "2026-10-20T12:00:00Z",
+ "projects": {
+  "dspkit": {
+   "files": {
+    "CMakeLists.txt": "cmake_minimum_required(VERSION 3.22)\nproject(dspkit CXX)\nfind_package(FFTW3 REQUIRED)\nadd_library(dsp src/engine.cpp src/io_alsa.cpp)\n",
+    "src/engine.cpp": "#include <xmmintrin.h>\nvoid engine_init() {\n    _MM_SET_FLUSH_ZERO_MODE(_MM_FLUSH_ZERO_ON);\n}\n",
+    "src/io_alsa.cpp": "void io_callback() {}\n",
+    "tests/test_filters.cpp": "TEST(Biquad, Impulse) { EXPECT_NEAR(y, 0.5f, 1e-6f); }\n",
+    "README.md": "Realtime audio DSP kit.\n"
+   }
+  }
+ },
+ "episodes": [
+  {
+   "id": "ds-underrun",
+   "project": "dspkit",
+   "harness": "codex",
+   "age_days": 24,
+   "turns": [
+    {
+     "user": "Playback crackles when the effect chain is on."
+    },
+    {
+     "tool": {
+      "cmd": "./bench_io --frames 128 --seconds 600",
+      "output": "ALSA lib pcm.c:8740:(snd_pcm_recover) underrun occurred\nxruns: 37 in 600s\n",
+      "exit": 1
+     }
+    },
+    {
+     "tool": {
+      "cmd": "ltrace -f -e malloc+free ./bench_io --frames 128 --seconds 5 2>&1 | grep io_callback | head -n 3",
+      "output": "io_callback -> operator new(4096)\nio_callback -> operator new(4096)\nio_callback -> operator delete(...)",
+      "exit": 0
+     }
+    },
+    {
+     "assistant": "The IO callback runs on the realtime thread and push_back's into a std::vector every period, so it allocates and sometimes blocks in malloc. Preallocating the scratch buffers in prepare()."
+    },
+    {
+     "tool": {
+      "cmd": "./bench_io --frames 128 --seconds 600",
+      "output": "xruns: 0 in 600s",
+      "exit": 0
+     }
+    }
+   ]
+  },
+  {
+   "id": "ds-fft-cmake",
+   "project": "dspkit",
+   "harness": "claude",
+   "age_days": 59,
+   "turns": [
+    {
+     "user": "CMake configure fails on my new Mac."
+    },
+    {
+     "tool": {
+      "cmd": "cmake -B build",
+      "output": "CMake Error at CMakeLists.txt:3 (find_package):\n  Could not find a package configuration file provided by \"FFTW3\" with any\n  of the following names: FFTW3Config.cmake fftw3-config.cmake\n-- Configuring incomplete, errors occurred!",
+      "exit": 1
+     }
+    },
+    {
+     "assistant": "Homebrew installs FFTW outside CMake's default search path on Apple silicon."
+    },
+    {
+     "tool": {
+      "cmd": "cmake -B build -DCMAKE_PREFIX_PATH=$(brew --prefix fftw) && cmake --build build",
+      "output": "-- Found FFTW3: /opt/homebrew/opt/fftw/lib/libfftw3.dylib\n[100%] Built target dsp",
+      "exit": 0
+     }
+    },
+    {
+     "assistant": "Configured and built."
+    },
+    {
+     "user": "add that to README"
+    },
+    {
+     "assistant": "Added."
+    },
+    {
+     "user": "thanks"
+    }
+   ],
+   "malformed": "garbage_line"
+  },
+  {
+   "id": "ds-denormal-a",
+   "project": "dspkit",
+   "harness": "codex",
+   "age_days": 99,
+   "turns": [
+    {
+     "user": "CPU usage of the reverb goes from 3 percent to 60 percent as soon as the input is silent."
+    },
+    {
+     "tool": {
+      "cmd": "perf stat -e cycles,instructions ./bench_reverb --silence",
+      "output": "  12,884,331,902  cycles\n     301,114,008  instructions  #    0.02  insn per cycle\n",
+      "exit": 0
+     }
+    },
+    {
+     "assistant": "An IIR tail decays into denormal floats; denormal arithmetic takes roughly 100 cycles per op on x86. Setting flush-to-zero and denormals-are-zero at engine init with _MM_SET_FLUSH_ZERO_MODE and _MM_SET_DENORMALS_ZERO_MODE."
+    },
+    {
+     "tool": {
+      "cmd": "./bench_reverb --silence",
+      "output": "reverb: 2.9% cpu (silence)\nreverb: 3.1% cpu (noise)",
+      "exit": 0
+     }
+    }
+   ],
+   "dup_group": "denormals"
+  },
+  {
+   "id": "ds-denormal-b",
+   "project": "dspkit",
+   "harness": "claude",
+   "age_days": 61,
+   "turns": [
+    {
+     "user": "Compressor release stage eats the CPU on quiet passages."
+    },
+    {
+     "tool": {
+      "cmd": "perf record -g ./bench_comp --quiet && perf report --stdio | head -n 12",
+      "output": "    71.2%  bench_comp  [.] Compressor::process\n     3.0%  bench_comp  [.] fftw_execute",
+      "exit": 0
+     }
+    },
+    {
+     "assistant": "Same cause as the other filters: denormals in the feedback path. engine_init sets _MM_SET_FLUSH_ZERO_MODE only for the main thread; the worker threads need to call it as well on thread start."
+    },
+    {
+     "tool": {
+      "cmd": "./bench_comp --quiet",
+      "output": "comp: 2.4% cpu (quiet)",
+      "exit": 0
+     }
+    }
+   ],
+   "dup_group": "denormals"
+  },
+  {
+   "id": "ds-float-eq",
+   "project": "dspkit",
+   "harness": "claude",
+   "age_days": 170,
+   "turns": [
+    {
+     "user": "The new biquad test fails on CI with EXPECT_EQ(y, 0.5f)."
+    },
+    {
+     "tool": {
+      "cmd": "ctest --output-on-failure",
+      "output": "Expected equality of these values:\n  y\n    Which is: 0.499999970\n  0.5f\n1 tests failed out of 12",
+      "exit": 8
+     }
+    },
+    {
+     "user": "Float tests must compare with a 1e-6 absolute tolerance, not EXPECT_EQ. Use EXPECT_NEAR."
+    },
+    {
+     "tool": {
+      "cmd": "ctest",
+      "output": "100% tests passed, 0 tests failed out of 12",
+      "exit": 0
+     }
+    }
+   ]
+  },
+  {
+   "id": "ds-ulp",
+   "project": "dspkit",
+   "harness": "codex",
+   "age_days": 20,
+   "turns": [
+    {
+     "user": "The 1e-6 absolute tolerance hides errors on tiny coefficients. What do we use now?"
+    },
+    {
+     "user": "We switched to ULP comparisons, EXPECT_FLOAT_ULP(a, b, 4). Absolute tolerance is only for values near zero with an explicit floor. Do not add new EXPECT_NEAR with 1e-6."
+    },
+    {
+     "tool": {
+      "cmd": "ctest",
+      "output": "100% tests passed, 0 tests failed out of 14",
+      "exit": 0
+     }
+    }
+   ]
+  },
+  {
+   "id": "ds-rename-muse",
+   "project": "dspkit",
+   "harness": "muse",
+   "age_days": 5,
+   "turns": [
+    {
+     "user": "rename Biquad::process to Biquad::tick"
+    },
+    {
+     "user": "update the tests"
+    },
+    {
+     "user": "ok, that's all for now"
+    }
+   ]
+  },
+  {
+   "id": "ds-clangformat",
+   "project": "dspkit",
+   "harness": "grok",
+   "age_days": 13,
+   "turns": [
+    {
+     "user": "Run clang-format on src/."
+    },
+    {
+     "tool": {
+      "cmd": "clang-format -i src/*.cpp && git diff --stat",
+      "output": " src/io_alsa.cpp | 4 ++--\n 1 file changed, 2 insertions(+), 2 deletions(-)",
+      "exit": 0
+     }
+    },
+    {
+     "assistant": "Done. Nothing else needs changing."
+    }
+   ]
+  },
+  {
+   "id": "ds-readme",
+   "project": "dspkit",
+   "harness": "grok",
+   "age_days": 27,
+   "turns": [
+    {
+     "user": "Explain how to run the benchmarks."
+    },
+    {
+     "tool": {
+      "cmd": "ls bench*",
+      "output": "bench_io.cpp\nbench_reverb.cpp\nbench_comp.cpp",
+      "exit": 0
+     }
+    },
+    {
+     "assistant": "README lists the three benchmarks and their flags."
+    }
+   ]
+  }
+ ],
+ "memories": [
+  {
+   "id": "m-ds-ftz",
+   "project": "dspkit",
+   "age_days": 60,
+   "action": "Enable flush-to-zero and denormals-are-zero (_MM_SET_FLUSH_ZERO_MODE) in engine_init and on every worker thread; denormals cause CPU spikes on silent input.",
+   "applicability": "CPU spikes when audio input goes quiet.",
+   "sources": [
+    {
+     "episode": "ds-denormal-a",
+     "contains": "Setting flush-to-zero and denormals-are-zero"
+    }
+   ],
+   "validity": [
+    {
+     "path": "src/engine.cpp",
+     "contains": "_MM_SET_FLUSH_ZERO_MODE"
+    }
+   ]
+  }
+ ],
+ "mutations": [
+  {
+   "project": "dspkit",
+   "path": "src/engine.cpp",
+   "content": "void engine_init() {\n}\n",
+   "commit": false
+  }
+ ],
+ "cases": [
+  {
+   "id": "ds-short-io",
+   "split": "heldout",
+   "category": "short_identifier",
+   "project": "dspkit",
+   "query": "IO",
+   "expect": "match",
+   "relevant": [
+    "ds-underrun"
+   ]
+  },
+  {
+   "id": "ds-exact-recover",
+   "split": "heldout",
+   "category": "exact_identifier",
+   "project": "dspkit",
+   "query": "snd_pcm_recover underrun occurred",
+   "expect": "match",
+   "relevant": [
+    "ds-underrun"
+   ]
+  },
+  {
+   "id": "ds-para-crackle",
+   "split": "heldout",
+   "category": "paraphrase",
+   "project": "dspkit",
+   "query": "crackling playback when the soundcard buffer starves",
+   "expect": "match",
+   "relevant": [
+    "ds-underrun"
+   ]
+  },
+  {
+   "id": "ds-path-prefix",
+   "split": "heldout",
+   "category": "path_symbol_command",
+   "project": "dspkit",
+   "query": "cmake -DCMAKE_PREFIX_PATH=$(brew --prefix fftw)",
+   "expect": "match",
+   "relevant": [
+    "ds-fft-cmake"
+   ]
+  },
+  {
+   "id": "ds-mal-fftw",
+   "split": "heldout",
+   "category": "malformed",
+   "project": "dspkit",
+   "query": "Could not find a package configuration file provided by FFTW3",
+   "expect": "match",
+   "relevant": [
+    "ds-fft-cmake"
+   ]
+  },
+  {
+   "id": "ds-dup-silence",
+   "split": "heldout",
+   "category": "duplicate",
+   "project": "dspkit",
+   "query": "filter CPU usage spikes when the audio goes silent",
+   "expect": "match",
+   "relevant": [
+    "ds-denormal-a",
+    "ds-denormal-b"
+   ]
+  },
+  {
+   "id": "ds-dup-ftz",
+   "split": "heldout",
+   "category": "duplicate",
+   "project": "dspkit",
+   "query": "_MM_SET_FLUSH_ZERO_MODE",
+   "expect": "match",
+   "relevant": [
+    "ds-denormal-a",
+    "ds-denormal-b"
+   ]
+  },
+  {
+   "id": "ds-dup-quiet",
+   "split": "heldout",
+   "category": "duplicate",
+   "project": "dspkit",
+   "query": "why does the compressor burn CPU on quiet passages",
+   "expect": "match",
+   "relevant": [
+    "ds-denormal-a",
+    "ds-denormal-b"
+   ]
+  },
+  {
+   "id": "ds-dup-denormal",
+   "split": "heldout",
+   "category": "duplicate",
+   "project": "dspkit",
+   "query": "denormals",
+   "expect": "match",
+   "relevant": [
+    "ds-denormal-a",
+    "ds-denormal-b"
+   ]
+  },
+  {
+   "id": "ds-temporal-float",
+   "split": "heldout",
+   "category": "temporal",
+   "project": "dspkit",
+   "query": "how should unit tests compare float results",
+   "expect": "match",
+   "relevant": [
+    "ds-ulp"
+   ],
+   "misleading": [
+    "ds-float-eq"
+   ]
+  },
+  {
+   "id": "ds-stale-ftz",
+   "split": "heldout",
+   "category": "stale_source",
+   "project": "dspkit",
+   "query": "is flush to zero enabled in engine_init",
+   "expect": "match",
+   "relevant": [
+    "ds-denormal-a",
+    "ds-denormal-b"
+   ],
+   "stale_memories": [
+    "m-ds-ftz"
+   ]
+  },
+  {
+   "id": "ds-multi",
+   "split": "heldout",
+   "category": "multi_record",
+   "project": "dspkit",
+   "query": "audio glitches from the realtime callback and CPU spikes on silence",
+   "expect": "match",
+   "relevant": [
+    "ds-underrun",
+    "ds-denormal-a",
+    "ds-denormal-b"
+   ],
+   "required": [
+    [
+     "ds-underrun"
+    ],
+    [
+     "ds-denormal-a",
+     "ds-denormal-b"
+    ]
+   ]
+  },
+  {
+   "id": "ds-neg-limiter",
+   "split": "heldout",
+   "category": "negative",
+   "project": "dspkit",
+   "query": "add a lookahead limiter to the master bus",
+   "expect": "abstain"
+  },
+  {
+   "id": "ds-neg-sanitizer",
+   "split": "heldout",
+   "category": "negative",
+   "project": "dspkit",
+   "query": "add CMake presets for the address sanitizer",
+   "expect": "abstain"
+  }
+ ]
+}

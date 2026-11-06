@@ -9,15 +9,17 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-ROOT = Path(__file__).resolve().parents[2]
+ROOT = Path(__file__).resolve().parents[1]
 WORK_TMP = ROOT / ".work" / "tmp"
 WORK_TMP.mkdir(parents=True, exist_ok=True)
-sys.path.insert(0, str(ROOT / "agent-memory" / "src"))
+sys.path.insert(0, str(ROOT / "tests"))
+import testkit  # noqa: E402
+sys.path.insert(0, str(testkit.SRC))
 
 from agent_memory import mirror as mirror_module  # noqa: E402
 from agent_memory import mirror_crypto as crypto  # noqa: E402
 
-DEV_AGE = ROOT / "agent-memory" / "cloudflare" / "dev-age.sh"
+DEV_AGE = ROOT / "cloudflare" / "dev-age.sh"
 
 
 def ensure_binary():

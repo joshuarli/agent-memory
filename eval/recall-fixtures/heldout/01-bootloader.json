@@ -1,0 +1,453 @@
+{
+ "now": "2026-10-20T12:00:00Z",
+ "projects": {
+  "bootloader": {
+   "files": {
+    "Makefile": "CC = arm-none-eabi-gcc\nCFLAGS = -mcpu=cortex-m4 -mthumb -Os -ffunction-sections -fdata-sections\nLDFLAGS = -T linker.ld -Wl,--gc-sections -specs=nano.specs\nSRCS = src/main.c src/flash.c src/uart.c\n\nall: build/boot.elf\n",
+    "linker.ld": "MEMORY\n{\n  FLASH (rx) : ORIGIN = 0x08000000, LENGTH = 32K\n  RAM (rwx) : ORIGIN = 0x20000000, LENGTH = 16K\n}\n",
+    "tools/config.py": "SLOT_SIZE = 0x4000\nCRC_COVERS_HEADER = False\nHEADER_BYTES = 64\n",
+    "tools/sign.py": "import sys\nfrom config import CRC_COVERS_HEADER, HEADER_BYTES\n",
+    "src/main.c": "int main(void) { return 0; }\n",
+    "src/flash.c": "#define FLASH_SECTOR_WRITE_DELAY_US 40\n",
+    "src/uart.c": "void uart_putc(char c) {}\n",
+    "README.md": "Cortex-M4 secondary-stage bootloader.\n"
+   }
+  }
+ },
+ "episodes": [
+  {
+   "id": "bl-flash-overflow",
+   "project": "bootloader",
+   "harness": "codex",
+   "age_days": 30,
+   "turns": [
+    {
+     "user": "make is failing at link time after I added the boot log messages. Can you look?"
+    },
+    {
+     "tool": {
+      "cmd": "make 2>&1 | tail -n 8",
+      "output": "arm-none-eabi-gcc -mcpu=cortex-m4 -mthumb -Os -o build/boot.elf src/main.c src/flash.c src/uart.c -T linker.ld -Wl,--gc-sections\n/opt/gcc-arm/bin/../lib/gcc/arm-none-eabi/12.2.1/../../../../arm-none-eabi/bin/ld: build/boot.elf section `.text' will not fit in region `FLASH'\n/opt/gcc-arm/bin/../lib/gcc/arm-none-eabi/12.2.1/../../../../arm-none-eabi/bin/ld: region `FLASH' overflowed by 1412 bytes\ncollect2: error: ld returned 1 exit status\nmake: *** [Makefile:9: build/boot.elf] Error 1",
+      "exit": 2
+     }
+    },
+    {
+     "tool": {
+      "cmd": "arm-none-eabi-nm --size-sort -S build/boot.elf | tail -n 4",
+      "output": "00000a40 T _vfprintf_r\n00000b1c T _svfprintf_r\n00000c88 T __ssvfiprintf_r\n00001054 T _dtoa_r",
+      "exit": 0
+     }
+    },
+    {
+     "assistant": "The newlib printf family (_vfprintf_r, _dtoa_r) pulls in about 7 KB because the log macro calls printf with %f. Replacing it with the tiny formatter in src/uart.c."
+    },
+    {
+     "user": "Do that, but keep -specs=nano.specs on the link line. The FLASH window is 32K and fixed by the ROM-mapped region, we cannot grow it."
+    },
+    {
+     "tool": {
+      "cmd": "make clean && make && arm-none-eabi-size build/boot.elf",
+      "output": "   text\t   data\t    bss\t    dec\t    hex\tfilename\n  31204\t    112\t   1532\t  32848\t   8050\tbuild/boot.elf",
+      "exit": 0
+     }
+    },
+    {
+     "assistant": "Links now: text is 31204 bytes, under the 32768 byte FLASH limit."
+    }
+   ]
+  },
+  {
+   "id": "bl-crc-correct",
+   "project": "bootloader",
+   "harness": "claude",
+   "age_days": 55,
+   "turns": [
+    {
+     "user": "Add a CRC32 check to the image header validation in the bootloader."
+    },
+    {
+     "assistant": "I will compute the CRC32 over the whole 64-byte header plus the payload and compare with the stored field."
+    },
+    {
+     "tool": {
+      "cmd": "python3 tools/sign.py verify build/boot.bin",
+      "output": "tools/sign.py: crc mismatch: stored=0x9a31c0de computed=0x1f84b2a7\n",
+      "exit": 1
+     }
+    },
+    {
+     "user": "No. The CRC covers the payload only. The header is excluded because the CRC field lives in the header, and tools/sign.py checks it that way. See CRC_COVERS_HEADER in tools/config.py."
+    },
+    {
+     "assistant": "Understood, computing over payload bytes starting at offset HEADER_BYTES."
+    },
+    {
+     "tool": {
+      "cmd": "python3 tools/sign.py verify build/boot.bin",
+      "output": "tools/sign.py: crc ok (0x1f84b2a7)\n",
+      "exit": 0
+     }
+    }
+   ]
+  },
+  {
+   "id": "bl-dma-abandoned",
+   "project": "bootloader",
+   "harness": "grok",
+   "age_days": 90,
+   "turns": [
+    {
+     "user": "Try moving the flash-to-RAM image copy to DMA so the CPU is free during boot."
+    },
+    {
+     "assistant": "Configuring DMA2 stream 0 in memory-to-memory mode from the flash bank to SRAM."
+    },
+    {
+     "tool": {
+      "cmd": "openocd -f board.cfg -c 'program build/boot.elf verify reset'",
+      "output": "Info : [stm32f4x.cpu] halted\nHardFault: BFSR=0x82 PRECISERR at 0x08004010 during DMA2 stream0\nerror: target did not resume\n",
+      "exit": 1
+     }
+    },
+    {
+     "assistant": "The flash controller stalls the AHB matrix while a sector erase is in progress, and DMA reads from flash during the erase give a precise bus fault. Tried delaying DMA start, same fault 3 of 5 resets."
+    },
+    {
+     "user": "Drop it then. A plain memcpy loop is fine, not worth the fault risk. Revert the DMA change."
+    },
+    {
+     "tool": {
+      "cmd": "git checkout -- src/flash.c && make",
+      "output": "make: 'build/boot.elf' is up to date.",
+      "exit": 0
+     }
+    }
+   ]
+  },
+  {
+   "id": "bl-bench-erase",
+   "project": "bootloader",
+   "harness": "codex",
+   "age_days": 140,
+   "turns": [
+    {
+     "user": "The update takes about 2.3 seconds on the bench. I assume sector erase dominates, can you speed up erase?"
+    },
+    {
+     "tool": {
+      "cmd": "python3 tools/bench_update.py --trace",
+      "output": "phase        ms\nerase       41.2\nwrite      212.7\nverify    1604.9\nreboot     438.0\ntotal     2296.8",
+      "exit": 0
+     }
+    },
+    {
+     "assistant": "Erase is 41 ms of 2297 ms. The hash verify pass is 1605 ms, so erase tuning cannot matter here."
+    },
+    {
+     "user": "OK, forget erase. Look at verify later."
+    }
+   ]
+  },
+  {
+   "id": "bl-led-rename",
+   "project": "bootloader",
+   "harness": "claude",
+   "age_days": 20,
+   "turns": [
+    {
+     "user": "Rename LED_STATUS to LED_BOOT_STATE across src/."
+    },
+    {
+     "tool": {
+      "cmd": "rg -n LED_STATUS src/",
+      "output": "src/main.c:14:#define LED_STATUS 3\nsrc/main.c:41:    gpio_set(LED_STATUS, 1);",
+      "exit": 0
+     }
+    },
+    {
+     "assistant": "Renaming both occurrences."
+    },
+    {
+     "tool": {
+      "cmd": "make",
+      "output": "arm-none-eabi-gcc -mcpu=cortex-m4 -mthumb -Os -o build/boot.elf src/main.c src/flash.c src/uart.c\n",
+      "exit": 0
+     }
+    }
+   ]
+  },
+  {
+   "id": "bl-clean-size",
+   "project": "bootloader",
+   "harness": "grok",
+   "age_days": 3,
+   "turns": [
+    {
+     "user": "Rebuild from clean and tell me the size."
+    },
+    {
+     "tool": {
+      "cmd": "make clean && make && arm-none-eabi-size build/boot.elf",
+      "output": "   text\t   data\t    bss\t    dec\t    hex\tfilename\n  28640\t    112\t   1532\t  30284\t   764c\tbuild/boot.elf",
+      "exit": 0
+     }
+    },
+    {
+     "assistant": "text is 28640 bytes. FLASH region usage is 87 percent of 32K."
+    }
+   ]
+  },
+  {
+   "id": "bl-uart-muse",
+   "project": "bootloader",
+   "harness": "muse",
+   "age_days": 8,
+   "turns": [
+    {
+     "user": "rename uart_putc to uart_write_byte in the bootloader"
+    },
+    {
+     "user": "also update the header comment for the flash sector write delay"
+    },
+    {
+     "user": "ok, that's all for now"
+    }
+   ]
+  }
+ ],
+ "memories": [
+  {
+   "id": "m-bl-nano",
+   "project": "bootloader",
+   "age_days": 29,
+   "action": "Keep -specs=nano.specs on the link line and keep newlib printf (_vfprintf_r, _dtoa_r) out of the bootloader; use the small formatter in src/uart.c. The FLASH window is a fixed 32K.",
+   "applicability": "Link fails with region FLASH overflowed after adding logging or formatting.",
+   "sources": [
+    {
+     "episode": "bl-flash-overflow",
+     "contains": "keep -specs=nano.specs on the link line"
+    }
+   ],
+   "validity": [
+    {
+     "path": "Makefile",
+     "contains": "-specs=nano.specs"
+    },
+    {
+     "path": "linker.ld",
+     "contains": "LENGTH = 32K"
+    }
+   ]
+  },
+  {
+   "id": "m-bl-crc",
+   "project": "bootloader",
+   "age_days": 54,
+   "action": "The image CRC32 covers the payload only, starting at HEADER_BYTES; the header holds the CRC field and is excluded. Verify with tools/sign.py verify.",
+   "applicability": "Touching image header validation or signing.",
+   "sources": [
+    {
+     "episode": "bl-crc-correct",
+     "contains": "The CRC covers the payload only"
+    }
+   ],
+   "validity": [
+    {
+     "path": "tools/config.py",
+     "contains": "CRC_COVERS_HEADER = False"
+    }
+   ]
+  }
+ ],
+ "mutations": [
+  {
+   "project": "bootloader",
+   "path": "README.md",
+   "content": "Cortex-M4 secondary-stage bootloader.\n\nFlash with openocd.\n",
+   "commit": true
+  }
+ ],
+ "cases": [
+  {
+   "id": "bl-exact-overflow",
+   "split": "heldout",
+   "category": "exact_identifier",
+   "project": "bootloader",
+   "query": "ld: region `FLASH' overflowed by 1412 bytes",
+   "expect": "match",
+   "relevant": [
+    "bl-flash-overflow"
+   ],
+   "misleading": [
+    "sh-flash-overflow"
+   ]
+  },
+  {
+   "id": "bl-exact-crcflag",
+   "split": "heldout",
+   "category": "exact_identifier",
+   "project": "bootloader",
+   "query": "CRC_COVERS_HEADER",
+   "expect": "match",
+   "relevant": [
+    "bl-crc-correct"
+   ]
+  },
+  {
+   "id": "bl-para-toobig",
+   "split": "heldout",
+   "category": "paraphrase",
+   "project": "bootloader",
+   "query": "our binary got too big for the ROM budget once we added text formatting output",
+   "expect": "match",
+   "relevant": [
+    "bl-flash-overflow"
+   ],
+   "misleading": [
+    "sh-flash-overflow"
+   ],
+   "valid_memories": [
+    "m-bl-nano"
+   ]
+  },
+  {
+   "id": "bl-para-slow",
+   "split": "heldout",
+   "category": "paraphrase",
+   "project": "bootloader",
+   "query": "what dominates the time to apply a new image on the device",
+   "expect": "match",
+   "relevant": [
+    "bl-bench-erase"
+   ]
+  },
+  {
+   "id": "bl-path-sign",
+   "split": "heldout",
+   "category": "path_symbol_command",
+   "project": "bootloader",
+   "query": "python3 tools/sign.py verify build/boot.bin",
+   "expect": "match",
+   "relevant": [
+    "bl-crc-correct"
+   ],
+   "valid_memories": [
+    "m-bl-crc"
+   ]
+  },
+  {
+   "id": "bl-traj-dma",
+   "split": "heldout",
+   "category": "trajectory",
+   "project": "bootloader",
+   "query": "did anyone try offloading the boot copy to a DMA controller",
+   "expect": "match",
+   "relevant": [
+    "bl-dma-abandoned"
+   ]
+  },
+  {
+   "id": "bl-traj-erase",
+   "split": "heldout",
+   "category": "trajectory",
+   "project": "bootloader",
+   "query": "is optimizing sector erase time worth doing",
+   "expect": "match",
+   "relevant": [
+    "bl-bench-erase"
+   ]
+  },
+  {
+   "id": "bl-sim-overflow",
+   "split": "heldout",
+   "category": "similar_project",
+   "project": "bootloader",
+   "query": "FLASH region overflowed even though -Os is set",
+   "expect": "match",
+   "relevant": [
+    "bl-flash-overflow"
+   ],
+   "misleading": [
+    "sh-flash-overflow"
+   ]
+  },
+  {
+   "id": "bl-valid-nano",
+   "split": "heldout",
+   "category": "valid_after_unrelated_commit",
+   "project": "bootloader",
+   "query": "can I use printf with floats in the boot log",
+   "expect": "match",
+   "relevant": [
+    "bl-flash-overflow"
+   ],
+   "valid_memories": [
+    "m-bl-nano"
+   ]
+  },
+  {
+   "id": "bl-prov-nano",
+   "split": "heldout",
+   "category": "provenance",
+   "project": "bootloader",
+   "query": "why is newlib printf banned in this bootloader",
+   "expect": "match",
+   "relevant": [
+    "bl-flash-overflow"
+   ],
+   "valid_memories": [
+    "m-bl-nano"
+   ]
+  },
+  {
+   "id": "bl-multi",
+   "split": "heldout",
+   "category": "multi_record",
+   "project": "bootloader",
+   "query": "image validation: how is the checksum computed, and what part of the update is slow",
+   "expect": "match",
+   "relevant": [
+    "bl-crc-correct",
+    "bl-bench-erase"
+   ],
+   "required": [
+    [
+     "bl-crc-correct"
+    ],
+    [
+     "bl-bench-erase"
+    ]
+   ]
+  },
+  {
+   "id": "bl-neg-wear",
+   "split": "heldout",
+   "category": "negative",
+   "project": "bootloader",
+   "query": "add wear leveling for the flash config sector",
+   "expect": "abstain"
+  },
+  {
+   "id": "bl-neg-rollback",
+   "split": "heldout",
+   "category": "negative",
+   "project": "bootloader",
+   "query": "implement an anti-rollback counter in the backup registers",
+   "expect": "abstain"
+  },
+  {
+   "id": "bl-para-integrity",
+   "category": "paraphrase",
+   "project": "bootloader",
+   "query": "which bytes does the integrity value cover when the image is validated",
+   "expect": "match",
+   "relevant": [
+    "bl-crc-correct"
+   ],
+   "valid_memories": [
+    "m-bl-crc"
+   ],
+   "split": "heldout"
+  }
+ ]
+}

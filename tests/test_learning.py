@@ -3,7 +3,6 @@ import importlib
 import io
 import json
 import os
-import shutil
 import sqlite3
 import subprocess
 import sys
@@ -13,8 +12,10 @@ import unittest
 from pathlib import Path
 from typing import Any, cast
 
-ROOT = Path(__file__).resolve().parents[2]
-SRC = ROOT / "agent-memory" / "src"
+ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / "tests"))
+import testkit  # noqa: E402
+SRC = testkit.SRC
 sys.path.insert(0, str(SRC))
 from agent_memory import learning  # noqa: E402
 from agent_memory import experience as experience_module  # noqa: E402
@@ -86,11 +87,7 @@ class LearningTest(unittest.TestCase):
         do = skills / "do/SKILL.md"
         do.parent.mkdir()
         do.write_text('---\nname: do\ndescription: "Route work. Skip trivial edits."\n---\n\n# Do\n\n**Report:** evidence.\n')
-        checker = self.repo / "dotfiles/skills-check.sh"
-        shutil.copyfile(ROOT / "dotfiles/skills-check.sh", checker)
-        mdtool = self.repo / "dotfiles/base/.local/bin/mdtool"
-        mdtool.parent.mkdir(parents=True)
-        shutil.copyfile(ROOT / "tools/mdtool/src/mdtool.py", mdtool)
+        testkit.install_checker(self.repo)
         (self.repo / "focused-test.py").write_text("import os, sys\nsys.exit(0 if os.environ.get('TEST_DRIVER') == '1' else 2)\n")
         (self.repo / "test-driver.py").write_text("import os, subprocess, sys\nenv = dict(os.environ, TEST_DRIVER='1')\nsys.exit(subprocess.call([sys.executable, 'focused-test.py'], env=env))\n")
         git(self.repo, "add", ".")

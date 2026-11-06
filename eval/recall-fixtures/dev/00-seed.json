@@ -1,0 +1,204 @@
+{
+ "now": "2026-10-20T12:00:00Z",
+ "projects": {
+  "tidepool": {
+   "files": {
+    "src/cache.py": "class ShardCache:\n    def evict(self):\n        return self._lru.pop()\n",
+    "Makefile": "test:\n\tpytest -q\n"
+   },
+   "worktrees": {
+    "evict-rewrite": {
+     "files": {
+      "src/cache.py": "class ShardCache:\n    def evict(self):\n        return self._clock.sweep()\n"
+     }
+    }
+   }
+  },
+  "ledger": {
+   "files": {
+    "app/billing.rs": "pub fn round_cents(x: f64) -> i64 { (x * 100.0).round() as i64 }\n"
+   }
+  }
+ },
+ "episodes": [
+  {
+   "id": "tp-001",
+   "project": "tidepool",
+   "harness": "codex",
+   "age_days": 21,
+   "turns": [
+    {
+     "user": "The nightly cache job OOMs on Linux CI but never on my laptop. Find out why."
+    },
+    {
+     "tool": {
+      "cmd": "pytest -q tests/test_cache.py",
+      "output": "tests/test_cache.py::test_evict PASSED",
+      "exit": 0
+     }
+    },
+    {
+     "tool": {
+      "cmd": "docker run --rm --memory=2g tidepool-ci pytest tests/test_cache.py",
+      "output": "Killed\nexit status 137: OOMKilled",
+      "exit": 137
+     }
+    },
+    {
+     "assistant": "The container limit is 2g but ShardCache preallocates shards from os.cpu_count(); the CI runner reports 64 CPUs so it allocates 64 shards."
+    },
+    {
+     "tool": {
+      "cmd": "TIDEPOOL_SHARDS=4 docker run --rm --memory=2g -e TIDEPOOL_SHARDS tidepool-ci pytest tests/test_cache.py",
+      "output": "1 passed in 0.8s",
+      "exit": 0
+     }
+    },
+    {
+     "assistant": "Setting TIDEPOOL_SHARDS=4 in the CI environment fixes the OOM; the default must not follow os.cpu_count() inside containers."
+    }
+   ]
+  },
+  {
+   "id": "tp-002",
+   "project": "tidepool",
+   "harness": "claude",
+   "age_days": 9,
+   "turns": [
+    {
+     "user": "rename the evict helper docstring typo"
+    },
+    {
+     "assistant": "Done: fixed the docstring in src/cache.py."
+    }
+   ]
+  },
+  {
+   "id": "lg-001",
+   "project": "ledger",
+   "harness": "grok",
+   "age_days": 14,
+   "turns": [
+    {
+     "user": "Totals in the invoice export are off by a cent on some customers."
+    },
+    {
+     "tool": {
+      "cmd": "cargo test billing::round_cents -- --nocapture",
+      "output": "assertion failed: left: 1999, right: 2000\nround_cents(19.995)",
+      "exit": 101
+     }
+    },
+    {
+     "user": "No, do not switch to f32. The bug is that f64 19.995 is really 19.99499999. Use integer cents from the parser."
+    },
+    {
+     "tool": {
+      "cmd": "cargo test billing",
+      "output": "test result: ok. 12 passed",
+      "exit": 0
+     }
+    }
+   ]
+  },
+  {
+   "id": "lg-002",
+   "project": "ledger",
+   "harness": "claude",
+   "native_id": "tp-001",
+   "age_days": 30,
+   "turns": [
+    {
+     "user": "Bump the serde version."
+    },
+    {
+     "tool": {
+      "cmd": "cargo update -p serde",
+      "output": "Updating serde v1.0.190 -> v1.0.200",
+      "exit": 0
+     }
+    }
+   ]
+  }
+ ],
+ "memories": [
+  {
+   "id": "m-tp-shards",
+   "project": "tidepool",
+   "age_days": 20,
+   "action": "Set TIDEPOOL_SHARDS explicitly when running the cache suite in containers; the default derives shard count from os.cpu_count().",
+   "applicability": "Running or debugging the tidepool cache tests inside CI containers with memory limits.",
+   "sources": [
+    {
+     "episode": "tp-001",
+     "contains": "OOMKilled"
+    }
+   ],
+   "validity": [
+    {
+     "path": "src/cache.py",
+     "contains": "def evict"
+    }
+   ]
+  }
+ ],
+ "mutations": [],
+ "cases": [
+  {
+   "id": "seed-1",
+   "split": "dev",
+   "category": "exact_identifier",
+   "project": "tidepool",
+   "query": "TIDEPOOL_SHARDS",
+   "expect": "match",
+   "relevant": [
+    "tp-001"
+   ],
+   "valid_memories": [
+    "m-tp-shards"
+   ],
+   "forbidden": [
+    "lg-001"
+   ]
+  },
+  {
+   "id": "seed-2",
+   "split": "dev",
+   "category": "paraphrase",
+   "project": "tidepool",
+   "query": "cache tests get killed in CI but pass locally",
+   "expect": "match",
+   "relevant": [
+    "tp-001"
+   ],
+   "valid_memories": [
+    "m-tp-shards"
+   ]
+  },
+  {
+   "id": "seed-3",
+   "split": "dev",
+   "category": "negative",
+   "project": "tidepool",
+   "query": "how to configure the websocket reconnect backoff",
+   "expect": "abstain",
+   "forbidden": [
+    "lg-001"
+   ]
+  },
+  {
+   "id": "seed-4",
+   "split": "dev",
+   "category": "id_collision",
+   "project": "ledger",
+   "query": "bump serde version",
+   "expect": "match",
+   "relevant": [
+    "lg-002"
+   ],
+   "forbidden": [
+    "tp-001"
+   ]
+  }
+ ]
+}

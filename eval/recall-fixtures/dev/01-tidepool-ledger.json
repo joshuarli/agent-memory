@@ -1,0 +1,496 @@
+{
+ "now": "2026-10-20T12:00:00Z",
+ "episodes": [
+  {
+   "id": "tp-003",
+   "project": "tidepool",
+   "harness": "claude",
+   "age_days": 33,
+   "turns": [
+    {
+     "user": "Add type hints to ShardCache, mypy is complaining about the new CI job."
+    },
+    {
+     "assistant": "Adding annotations to evict, get and put in src/cache.py."
+    },
+    {
+     "tool": {
+      "cmd": "mypy src/cache.py",
+      "output": "Success: no issues found in 1 source file",
+      "exit": 0
+     }
+    },
+    {
+     "user": "ruff too please"
+    },
+    {
+     "tool": {
+      "cmd": "ruff check src",
+      "output": "All checks passed!",
+      "exit": 0
+     }
+    },
+    {
+     "assistant": "Type hints added; mypy and ruff are clean."
+    }
+   ]
+  },
+  {
+   "id": "tp-004",
+   "project": "tidepool",
+   "harness": "codex",
+   "age_days": 120,
+   "turns": [
+    {
+     "user": "bump pytest to 8.2 in requirements-dev.txt and make sure the suite still runs"
+    },
+    {
+     "tool": {
+      "cmd": "pip install -U 'pytest==8.2.*'",
+      "output": "Successfully installed pytest-8.2.2 pluggy-1.5.0",
+      "exit": 0
+     }
+    },
+    {
+     "tool": {
+      "cmd": "pytest -q",
+      "output": "....................                                        [100%]\n20 passed in 3.41s",
+      "exit": 0
+     }
+    },
+    {
+     "assistant": "Bumped pytest to 8.2.2, all 20 tests pass."
+    }
+   ]
+  },
+  {
+   "id": "tp-005",
+   "project": "tidepool",
+   "harness": "grok",
+   "age_days": 40,
+   "turns": [
+    {
+     "user": "evict() sometimes crashes in the nightly when the flusher thread is running. Make it safe."
+    },
+    {
+     "tool": {
+      "cmd": "pytest -x tests/test_cache.py::test_evict_concurrent",
+      "output": "Traceback (most recent call last):\n  File \"src/cache.py\", line 31, in evict\n    for key, entry in self._lru.items():\nRuntimeError: OrderedDict mutated during iteration\n1 failed in 1.12s",
+      "exit": 1
+     }
+    },
+    {
+     "assistant": "evict scans _lru.items() while flush() inserts from another thread. Options: global lock or snapshot."
+    },
+    {
+     "user": "No global lock, flush is on the hot path. Copy the keys under the shard lock, release it, then scan the copy."
+    },
+    {
+     "tool": {
+      "cmd": "pytest -q tests/test_cache.py",
+      "output": "....\n4 passed in 1.92s",
+      "exit": 0
+     }
+    },
+    {
+     "tool": {
+      "cmd": "pytest -q --count=50 tests/test_cache.py::test_evict_concurrent",
+      "output": "50 passed in 41.30s",
+      "exit": 0
+     }
+    },
+    {
+     "assistant": "evict now snapshots keys under the shard lock."
+    }
+   ]
+  },
+  {
+   "id": "tp-006",
+   "project": "tidepool",
+   "harness": "muse",
+   "age_days": 60,
+   "turns": [
+    {
+     "user": "tidy the README section on cache sizing"
+    },
+    {
+     "user": "also fix the broken link to the design doc"
+    },
+    {
+     "user": "rename the example config from sample.ini to example.ini"
+    }
+   ]
+  },
+  {
+   "id": "lg-004",
+   "project": "ledger",
+   "harness": "claude",
+   "age_days": 90,
+   "turns": [
+    {
+     "user": "Should we move the invoice math to the rust_decimal crate?"
+    },
+    {
+     "tool": {
+      "cmd": "cargo bench --bench totals",
+      "output": "round_cents_i64      time: [41.2 ns 41.9 ns 42.8 ns]\ndecimal_round        time: [598 ns 612 ns 631 ns]",
+      "exit": 0
+     }
+    },
+    {
+     "assistant": "The decimal path is about 15x slower on the 2M-line month-end export."
+    },
+    {
+     "user": "Also printpdf only takes i64 cents, so we convert back anyway. We are not adopting rust_decimal; revisit only if we ever need sub-cent rates."
+    },
+    {
+     "assistant": "Recorded: integer cents stays; no rust_decimal dependency."
+    }
+   ]
+  },
+  {
+   "id": "lg-005",
+   "project": "ledger",
+   "harness": "grok",
+   "age_days": 150,
+   "turns": [
+    {
+     "user": "why does parse_amount look up a currency table instead of assuming two decimals?"
+    },
+    {
+     "tool": {
+      "cmd": "rg -n 'exponent' app/",
+      "output": "app/billing.rs:88:    let exponent = CURRENCY_EXPONENT.get(code).copied().unwrap_or(2);",
+      "exit": 0
+     }
+    },
+    {
+     "tool": {
+      "cmd": "head -3 fixtures/bank_feed_jpy.csv",
+      "output": "id,currency,amount\n1001,JPY,4500\n1002,JPY,12800",
+      "exit": 0
+     }
+    },
+    {
+     "assistant": "The bank feed sends JPY with zero decimals and BHD with three, so the minor-unit exponent must come from the ISO 4217 table, not a constant of 2. No code change needed."
+    }
+   ]
+  },
+  {
+   "id": "lg-006",
+   "project": "ledger",
+   "harness": "claude",
+   "age_days": 160,
+   "turns": [
+    {
+     "user": "totals are off by one cent for some invoices, quick fix please"
+    },
+    {
+     "assistant": "Adding a small epsilon before rounding in round_cents."
+    },
+    {
+     "tool": {
+      "cmd": "cargo test billing",
+      "output": "test result: ok. 12 passed; 0 failed",
+      "exit": 0
+     }
+    },
+    {
+     "assistant": "Added +1e-9 before rounding; tests pass."
+    }
+   ]
+  },
+  {
+   "id": "lg-007",
+   "project": "ledger",
+   "harness": "codex",
+   "age_days": 22,
+   "turns": [
+    {
+     "user": "run clippy and fix whatever it flags in billing"
+    },
+    {
+     "tool": {
+      "cmd": "cargo clippy -- -D warnings",
+      "output": "warning: this `if` has identical blocks\n  --> app/billing.rs:57:9\nerror: could not compile `ledger` due to previous error",
+      "exit": 101
+     }
+    },
+    {
+     "assistant": "Merging the identical branches."
+    },
+    {
+     "tool": {
+      "cmd": "cargo clippy -- -D warnings",
+      "output": "    Finished dev [unoptimized + debuginfo] target(s) in 2.31s",
+      "exit": 0
+     }
+    }
+   ]
+  }
+ ],
+ "memories": [
+  {
+   "id": "m-tp-evict",
+   "project": "tidepool",
+   "age_days": 38,
+   "action": "ShardCache.evict must not iterate _lru while the flusher thread inserts; copy the keys under the shard lock, release it, then scan the copy. Do not add a global cache lock because flush is on the hot path.",
+   "applicability": "Editing or debugging ShardCache.evict or any code that scans the LRU concurrently with flush.",
+   "sources": [
+    {
+     "episode": "tp-005",
+     "contains": "OrderedDict mutated during iteration"
+    }
+   ],
+   "validity": [
+    {
+     "path": "src/cache.py",
+     "contains": "self._lru.pop()"
+    }
+   ]
+  },
+  {
+   "id": "m-lg-cents",
+   "project": "ledger",
+   "age_days": 12,
+   "action": "Money is integer cents end to end: parse decimal strings straight to i64 cents and never round an f64. Do not switch to f32 and do not add epsilons before rounding.",
+   "applicability": "Changing round_cents, invoice totals or amount parsing in app/billing.rs.",
+   "sources": [
+    {
+     "episode": "lg-001",
+     "contains": "19.99499999"
+    }
+   ],
+   "validity": [
+    {
+     "path": "app/billing.rs",
+     "contains": "round_cents"
+    }
+   ]
+  }
+ ],
+ "mutations": [
+  {
+   "project": "ledger",
+   "path": "app/billing.rs",
+   "content": "use rust_decimal::Decimal;\n\npub fn total(lines: &[Decimal]) -> Decimal { lines.iter().sum() }\n",
+   "commit": true
+  }
+ ],
+ "cases": [
+  {
+   "id": "tp-c1",
+   "split": "dev",
+   "category": "exact_identifier",
+   "project": "tidepool",
+   "query": "RuntimeError: OrderedDict mutated during iteration",
+   "expect": "match",
+   "relevant": [
+    "tp-005"
+   ],
+   "valid_memories": [
+    "m-tp-evict"
+   ],
+   "forbidden": [
+    "lg-007"
+   ]
+  },
+  {
+   "id": "tp-c2",
+   "split": "dev",
+   "category": "paraphrase",
+   "project": "tidepool",
+   "query": "entries vanish under the sweeper thread and it blows up under load",
+   "expect": "match",
+   "relevant": [
+    "tp-005"
+   ],
+   "valid_memories": [
+    "m-tp-evict"
+   ],
+   "misleading": [
+    "tp-001"
+   ]
+  },
+  {
+   "id": "tp-c3",
+   "split": "dev",
+   "category": "worktree",
+   "project": "tidepool",
+   "query": "evict crashes when flush runs at the same time",
+   "expect": "match",
+   "relevant": [
+    "tp-005"
+   ],
+   "valid_memories": [
+    "m-tp-evict"
+   ]
+  },
+  {
+   "id": "tp-c4",
+   "split": "dev",
+   "category": "worktree",
+   "project": "tidepool",
+   "query": "evict crashes when flush runs at the same time",
+   "expect": "match",
+   "worktree": "evict-rewrite",
+   "relevant": [
+    "tp-005"
+   ],
+   "stale_memories": [
+    "m-tp-evict"
+   ]
+  },
+  {
+   "id": "tp-c5",
+   "split": "dev",
+   "category": "negative",
+   "project": "tidepool",
+   "query": "add retry with jitter to the shard rebalancer",
+   "expect": "abstain",
+   "forbidden": [
+    "lg-006"
+   ],
+   "misleading": [
+    "tp-001"
+   ]
+  },
+  {
+   "id": "tp-c6",
+   "split": "dev",
+   "category": "negative",
+   "project": "tidepool",
+   "query": "pytest gets OOM killed loading the 10GB parquet fixture",
+   "expect": "abstain",
+   "forbidden": [
+    "lg-007"
+   ]
+  },
+  {
+   "id": "tp-c7",
+   "split": "dev",
+   "category": "negative",
+   "project": "tidepool",
+   "query": "bump mypy and fix the new errors",
+   "expect": "abstain",
+   "forbidden": [
+    "lg-007"
+   ]
+  },
+  {
+   "id": "lg-c1",
+   "split": "dev",
+   "category": "exact_identifier",
+   "project": "ledger",
+   "query": "rust_decimal",
+   "expect": "match",
+   "relevant": [
+    "lg-004"
+   ],
+   "forbidden": [
+    "tp-004"
+   ]
+  },
+  {
+   "id": "lg-c2",
+   "split": "dev",
+   "category": "stale_source",
+   "project": "ledger",
+   "query": "invoice totals are off by a cent for some customers again",
+   "expect": "match",
+   "relevant": [
+    "lg-001"
+   ],
+   "misleading": [
+    "lg-006"
+   ],
+   "stale_memories": [
+    "m-lg-cents"
+   ]
+  },
+  {
+   "id": "lg-c3",
+   "split": "dev",
+   "category": "contradiction",
+   "project": "ledger",
+   "query": "add an epsilon before rounding in round_cents",
+   "expect": "match",
+   "relevant": [
+    "lg-001"
+   ],
+   "misleading": [
+    "lg-006"
+   ],
+   "stale_memories": [
+    "m-lg-cents"
+   ]
+  },
+  {
+   "id": "lg-c4",
+   "split": "dev",
+   "category": "trajectory",
+   "project": "ledger",
+   "query": "switch totals to a decimal type for correctness",
+   "expect": "match",
+   "relevant": [
+    "lg-004"
+   ],
+   "misleading": [
+    "lg-006"
+   ]
+  },
+  {
+   "id": "lg-c5",
+   "split": "dev",
+   "category": "nonobvious_success",
+   "project": "ledger",
+   "query": "how many decimal places does amount parsing assume",
+   "expect": "match",
+   "relevant": [
+    "lg-005"
+   ],
+   "forbidden": [
+    "tp-005"
+   ]
+  },
+  {
+   "id": "lg-c6",
+   "split": "dev",
+   "category": "negative",
+   "project": "ledger",
+   "query": "add pagination to the invoice list endpoint",
+   "expect": "abstain",
+   "forbidden": [
+    "tp-003"
+   ]
+  },
+  {
+   "id": "lg-c7",
+   "split": "dev",
+   "category": "negative",
+   "project": "ledger",
+   "query": "cargo build fails linking openssl on alpine",
+   "expect": "abstain",
+   "misleading": [
+    "lg-007"
+   ]
+  },
+  {
+   "id": "lg-c8",
+   "split": "dev",
+   "category": "temporal",
+   "project": "ledger",
+   "query": "how should I fix the one cent rounding error",
+   "expect": "match",
+   "relevant": [
+    "lg-001"
+   ],
+   "misleading": [
+    "lg-006"
+   ],
+   "stale_memories": [
+    "m-lg-cents"
+   ]
+  }
+ ]
+}

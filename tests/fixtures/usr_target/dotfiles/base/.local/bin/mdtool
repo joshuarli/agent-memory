@@ -1,0 +1,7 @@
+import sys
+
+COMMANDS = ("links", "anchors", "refs", "consumers", "pointers", "dups", "router", "check")
+
+if sys.argv[1:] != ["commands"]:
+    sys.exit("usage: mdtool commands")
+print("\n".join(COMMANDS))

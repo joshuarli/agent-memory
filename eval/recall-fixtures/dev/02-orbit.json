@@ -1,0 +1,729 @@
+{
+ "now": "2026-10-20T12:00:00Z",
+ "projects": {
+  "orbit-ingest": {
+   "files": {
+    "config.py": "import orbit_core\n\nBATCH_MAX = 500\nUPSTREAM = 'https://staging.orbit.invalid'\n",
+    "Makefile": "deps:\n\tpip install ../orbit-core\n\ntest: deps\n\tpytest -q\n\nci: test\n",
+    "ingest.py": "def parse_rows(rows):\n    return [r.split(',') for r in rows]\n",
+    "README.md": "# orbit-ingest\n"
+   }
+  },
+  "orbit-export": {
+   "files": {
+    "config.py": "import orbit_core\n\nEXPORT_DIR = 'out'\n",
+    "Makefile": "test:\n\tpytest -q\n\nlint:\n\truff check .\n",
+    "pytest.ini": "[pytest]\npythonpath = src\n",
+    "requirements.txt": "pandas>=2.0\npyarrow>=14\n",
+    "src/orbit_core/__init__.py": "VERSION = '2.1'\n",
+    "export.py": "def write(df, path):\n    df.to_parquet(path)\n"
+   }
+  }
+ },
+ "episodes": [
+  {
+   "id": "oi-001",
+   "project": "orbit-ingest",
+   "harness": "claude",
+   "age_days": 25,
+   "turns": [
+    {
+     "user": "CI is red on the ingest repo but make test is green on my machine"
+    },
+    {
+     "tool": {
+      "cmd": "gh run view 8841 --log-failed | tail -n 8",
+      "output": "test\tRun make ci\ttests/test_ingest.py:1: in <module>\ntest\tRun make ci\t    import orbit_core\ntest\tRun make ci\tE   ModuleNotFoundError: No module named 'orbit_core'\ntest\tRun make ci\tmake: *** [Makefile:6: test] Error 2",
+      "exit": 0
+     }
+    },
+    {
+     "assistant": "Locally orbit-core is installed editable in my venv from ../orbit-core. The runner starts from a clean venv and nothing in the ci target installs the sibling package."
+    },
+    {
+     "tool": {
+      "cmd": "python3 -m venv .venv-clean && . .venv-clean/bin/activate && pytest -q",
+      "output": "ERROR tests/test_ingest.py - ModuleNotFoundError: No module named 'orbit_core'\n1 error in 0.21s",
+      "exit": 2
+     }
+    },
+    {
+     "assistant": "Added a deps target that pip installs ../orbit-core and made test depend on it."
+    },
+    {
+     "tool": {
+      "cmd": ". .venv-clean/bin/activate && make ci",
+      "output": "pip install ../orbit-core\nSuccessfully installed orbit-core-2.1.0\npytest -q\n20 passed in 2.81s",
+      "exit": 0
+     }
+    }
+   ]
+  },
+  {
+   "id": "oi-002",
+   "project": "orbit-ingest",
+   "harness": "codex",
+   "age_days": 60,
+   "turns": [
+    {
+     "user": "why is BATCH_MAX 500? we could ingest much faster with bigger batches"
+    },
+    {
+     "tool": {
+      "cmd": "git log -S'BATCH_MAX = 500' --oneline -- config.py",
+      "output": "a41c9e2 cap batches at 500: upstream /bulk returns 413 above 500 rows",
+      "exit": 0
+     }
+    },
+    {
+     "tool": {
+      "cmd": "curl -s -o /dev/null -w '%{http_code}' -X POST https://staging.orbit.invalid/bulk -d @rows600.json",
+      "output": "413",
+      "exit": 0
+     }
+    },
+    {
+     "assistant": "The cap mirrors a server-side limit; larger batches are rejected, so it is not a tunable."
+    },
+    {
+     "user": "ok leave it. add a test that pins the cap"
+    },
+    {
+     "tool": {
+      "cmd": "pytest -q tests/test_config.py",
+      "output": "1 passed in 0.03s",
+      "exit": 0
+     }
+    },
+    {
+     "assistant": "Added test_batch_cap."
+    },
+    {
+     "user": "thanks"
+    },
+    {
+     "assistant": "Done."
+    }
+   ],
+   "malformed": "garbage_line"
+  },
+  {
+   "id": "oi-003",
+   "project": "orbit-ingest",
+   "harness": "codex",
+   "age_days": 10,
+   "turns": [
+    {
+     "user": "rename parse to parse_rows everywhere"
+    },
+    {
+     "tool": {
+      "cmd": "rg -l 'parse\\(' --glob '*.py'",
+      "output": "ingest.py\ntests/test_ingest.py",
+      "exit": 0
+     }
+    },
+    {
+     "assistant": "Renamed the function and updated both callers."
+    },
+    {
+     "tool": {
+      "cmd": "pytest -q",
+      "output": "20 passed in 2.77s",
+      "exit": 0
+     }
+    }
+   ]
+  },
+  {
+   "id": "oi-004",
+   "project": "orbit-ingest",
+   "harness": "grok",
+   "age_days": 45,
+   "turns": [
+    {
+     "user": "add info logging around each batch send"
+    },
+    {
+     "assistant": "Added logger.info with batch index and row count in ingest.py."
+    },
+    {
+     "tool": {
+      "cmd": "pytest -q",
+      "output": "20 passed in 2.80s",
+      "exit": 0
+     }
+    },
+    {
+     "user": "and a debug line for retries"
+    },
+    {
+     "assistant": "Added."
+    }
+   ]
+  },
+  {
+   "id": "oi-005",
+   "project": "orbit-ingest",
+   "harness": "codex",
+   "age_days": 300,
+   "turns": [
+    {
+     "user": "parsing 2M rows is slow, switch parse to multiprocessing.Pool"
+    },
+    {
+     "tool": {
+      "cmd": "python -m cProfile -s cumtime bench.py | head -8",
+      "output": "         41293 function calls in 52.114 seconds\n   ncalls  tottime  cumtime filename:lineno(function)\n        1    0.002   52.114 bench.py:1(main)\n     8120   41.307   46.002 sockets.py:recv_into\n     8120    3.108    3.402 ingest.py:12(parse_rows)",
+      "exit": 0
+     }
+    },
+    {
+     "assistant": "Only about 6% of wall time is parse_rows; the rest is waiting on the upstream HTTP fetch, so a process pool will not help."
+    },
+    {
+     "tool": {
+      "cmd": "hyperfine 'python bench.py --pool 4' 'python bench.py --threads 8'",
+      "output": "Benchmark 1: python bench.py --pool 4\n  Time (mean \u00b1 \u03c3):     49.8 s \u00b1  1.2 s\nBenchmark 2: python bench.py --threads 8\n  Time (mean \u00b1 \u03c3):     13.4 s \u00b1  0.6 s",
+      "exit": 0
+     }
+    },
+    {
+     "user": "ok, threads for the fetch and leave parse alone"
+    }
+   ]
+  },
+  {
+   "id": "oi-006",
+   "project": "orbit-ingest",
+   "harness": "claude",
+   "age_days": 5,
+   "turns": [
+    {
+     "user": "update the README CI badge to point at the new workflow name"
+    },
+    {
+     "assistant": "Edited the badge URL in README.md."
+    },
+    {
+     "tool": {
+      "cmd": "git diff --stat",
+      "output": "README.md | 2 +-\n 1 file changed, 1 insertion(+), 1 deletion(-)",
+      "exit": 0
+     }
+    }
+   ]
+  },
+  {
+   "id": "oi-007",
+   "project": "orbit-ingest",
+   "harness": "muse",
+   "age_days": 80,
+   "turns": [
+    {
+     "user": "add a type annotation to parse_rows"
+    },
+    {
+     "user": "and a docstring for config.UPSTREAM"
+    },
+    {
+     "user": "run the formatter afterwards"
+    }
+   ]
+  },
+  {
+   "id": "oe-001",
+   "project": "orbit-export",
+   "harness": "codex",
+   "age_days": 18,
+   "turns": [
+    {
+     "user": "CI fails with ModuleNotFoundError orbit_core for export but passes for me"
+    },
+    {
+     "tool": {
+      "cmd": "gh run view 5120 --log-failed | tail -n 4",
+      "output": "E   ModuleNotFoundError: No module named 'orbit_core'\nmake: *** [Makefile:2: test] Error 2",
+      "exit": 0
+     }
+    },
+    {
+     "assistant": "The package lives in src/orbit_core. My shell has a stale PYTHONPATH entry that hides the problem; the runner invokes pytest from the repo root where src is not on sys.path."
+    },
+    {
+     "tool": {
+      "cmd": "env -u PYTHONPATH pytest -q",
+      "output": "ImportError while importing test module 'tests/test_export.py'.\nE   ModuleNotFoundError: No module named 'orbit_core'\n1 error in 0.18s",
+      "exit": 2
+     }
+    },
+    {
+     "assistant": "Adding pythonpath = src to pytest.ini."
+    },
+    {
+     "tool": {
+      "cmd": "env -u PYTHONPATH pytest -q",
+      "output": "18 passed in 2.10s",
+      "exit": 0
+     }
+    }
+   ]
+  },
+  {
+   "id": "oe-002",
+   "project": "orbit-export",
+   "harness": "claude",
+   "age_days": 70,
+   "turns": [
+    {
+     "user": "make EXPORT_DIR configurable via env"
+    },
+    {
+     "assistant": "config.py now reads EXPORT_DIR from os.environ with a default of out."
+    },
+    {
+     "tool": {
+      "cmd": "pytest -q",
+      "output": "18 passed in 2.05s",
+      "exit": 0
+     }
+    }
+   ]
+  },
+  {
+   "id": "oe-003",
+   "project": "orbit-export",
+   "harness": "grok",
+   "age_days": 140,
+   "turns": [
+    {
+     "user": "export is failing since I pinned pandas<2 for the date bug"
+    },
+    {
+     "tool": {
+      "cmd": "pytest -q tests/test_parquet.py",
+      "output": "FAILED tests/test_parquet.py::test_roundtrip - TypeError: read_parquet() got an unexpected keyword argument 'dtype_backend'\n1 failed, 3 passed in 0.9s",
+      "exit": 1
+     }
+    },
+    {
+     "user": "No, we need pandas 2 for dtype_backend pyarrow. Remove the pin and fix the date parsing with date_format instead."
+    },
+    {
+     "tool": {
+      "cmd": "pip install -U 'pandas>=2.0' && pytest -q",
+      "output": "Successfully installed pandas-2.2.2\n18 passed in 2.31s",
+      "exit": 0
+     }
+    },
+    {
+     "assistant": "Removed the pin and passed date_format to read_csv."
+    }
+   ]
+  },
+  {
+   "id": "oe-004",
+   "project": "orbit-export",
+   "harness": "muse",
+   "age_days": 30,
+   "turns": [
+    {
+     "user": "change the lint target in the Makefile to use ruff format --check"
+    },
+    {
+     "user": "remove the old flake8 config file"
+    },
+    {
+     "user": "and drop the unused tox.ini"
+    }
+   ]
+  },
+  {
+   "id": "oe-005",
+   "project": "orbit-export",
+   "harness": "codex",
+   "age_days": 12,
+   "turns": [
+    {
+     "user": "run ruff and fix the import order"
+    },
+    {
+     "tool": {
+      "cmd": "ruff check . --fix",
+      "output": "Found 3 errors (3 fixed, 0 remaining).",
+      "exit": 0
+     }
+    },
+    {
+     "tool": {
+      "cmd": "pytest -q",
+      "output": "18 passed in 2.08s",
+      "exit": 0
+     }
+    }
+   ]
+  },
+  {
+   "id": "oe-006",
+   "project": "orbit-export",
+   "harness": "claude",
+   "age_days": 385,
+   "turns": [
+    {
+     "user": "date columns come out wrong after the pandas upgrade, just get tests green"
+    },
+    {
+     "tool": {
+      "cmd": "pytest -q tests/test_dates.py",
+      "output": "FAILED tests/test_dates.py::test_parse - UserWarning: Could not infer format, so each element will be parsed individually\n1 failed in 0.4s",
+      "exit": 1
+     }
+    },
+    {
+     "assistant": "Pinning pandas<2 in requirements.txt restores the old parsing."
+    },
+    {
+     "tool": {
+      "cmd": "pip install 'pandas<2' && pytest -q",
+      "output": "Successfully installed pandas-1.5.3\n14 passed in 1.7s",
+      "exit": 0
+     }
+    }
+   ]
+  }
+ ],
+ "memories": [
+  {
+   "id": "m-oi-batch",
+   "project": "orbit-ingest",
+   "age_days": 58,
+   "action": "BATCH_MAX = 500 mirrors the upstream /bulk limit (413 above 500 rows). Do not raise it to speed up ingestion; parallelise fetches instead.",
+   "applicability": "Tuning ingest batch size or throughput in orbit-ingest.",
+   "sources": [
+    {
+     "episode": "oi-002",
+     "contains": "413"
+    }
+   ],
+   "validity": [
+    {
+     "path": "config.py",
+     "contains": "BATCH_MAX = 500"
+    }
+   ]
+  },
+  {
+   "id": "m-oe-pythonpath",
+   "project": "orbit-export",
+   "age_days": 17,
+   "action": "orbit-export keeps its package under src/, so pytest.ini must set pythonpath = src. Verify imports with env -u PYTHONPATH pytest because a stale PYTHONPATH hides the failure locally.",
+   "applicability": "CI import failures for orbit_core in orbit-export.",
+   "sources": [
+    {
+     "episode": "oe-001",
+     "contains": "ModuleNotFoundError"
+    }
+   ],
+   "validity": [
+    {
+     "path": "pytest.ini",
+     "contains": "pythonpath = src"
+    }
+   ]
+  }
+ ],
+ "mutations": [
+  {
+   "project": "orbit-ingest",
+   "path": "docs/CHANGELOG.md",
+   "content": "# Changelog\n\n- 2.1: cleanup\n",
+   "commit": true
+  },
+  {
+   "project": "orbit-export",
+   "path": "pytest.ini",
+   "content": "[pytest]\naddopts = -q\n",
+   "commit": false
+  }
+ ],
+ "cases": [
+  {
+   "id": "oi-c1",
+   "split": "dev",
+   "category": "similar_project",
+   "project": "orbit-ingest",
+   "query": "ModuleNotFoundError: No module named 'orbit_core' only on CI",
+   "expect": "match",
+   "relevant": [
+    "oi-001"
+   ],
+   "misleading": [
+    "oe-001"
+   ],
+   "forbidden": [
+    "oe-001"
+   ]
+  },
+  {
+   "id": "oe-c1",
+   "split": "dev",
+   "category": "similar_project",
+   "project": "orbit-export",
+   "query": "ModuleNotFoundError: No module named 'orbit_core' only on CI",
+   "expect": "match",
+   "relevant": [
+    "oe-001"
+   ],
+   "stale_memories": [
+    "m-oe-pythonpath"
+   ],
+   "misleading": [
+    "oi-001"
+   ],
+   "forbidden": [
+    "oi-001"
+   ]
+  },
+  {
+   "id": "oi-c2",
+   "split": "dev",
+   "category": "short_identifier",
+   "project": "orbit-ingest",
+   "query": "CI",
+   "expect": "match",
+   "relevant": [
+    "oi-001"
+   ],
+   "misleading": [
+    "oi-006"
+   ],
+   "forbidden": [
+    "oe-001"
+   ]
+  },
+  {
+   "id": "oi-c3",
+   "split": "dev",
+   "category": "exact_identifier",
+   "project": "orbit-ingest",
+   "query": "BATCH_MAX",
+   "expect": "match",
+   "relevant": [
+    "oi-002"
+   ],
+   "valid_memories": [
+    "m-oi-batch"
+   ],
+   "forbidden": [
+    "oe-002"
+   ]
+  },
+  {
+   "id": "oi-c4",
+   "split": "dev",
+   "category": "malformed",
+   "project": "orbit-ingest",
+   "query": "why can't we send more than 500 rows per request",
+   "expect": "match",
+   "relevant": [
+    "oi-002"
+   ],
+   "valid_memories": [
+    "m-oi-batch"
+   ]
+  },
+  {
+   "id": "oi-c5",
+   "split": "dev",
+   "category": "trajectory",
+   "project": "orbit-ingest",
+   "query": "use multiprocessing to speed up parsing",
+   "expect": "match",
+   "relevant": [
+    "oi-005"
+   ],
+   "misleading": [
+    "oi-003"
+   ],
+   "forbidden": [
+    "oe-002"
+   ]
+  },
+  {
+   "id": "oi-c6",
+   "split": "dev",
+   "category": "valid_after_unrelated_commit",
+   "project": "orbit-ingest",
+   "query": "raise the ingest batch size limit",
+   "expect": "match",
+   "relevant": [
+    "oi-002"
+   ],
+   "valid_memories": [
+    "m-oi-batch"
+   ]
+  },
+  {
+   "id": "oi-c7",
+   "split": "dev",
+   "category": "negative",
+   "project": "orbit-ingest",
+   "query": "set up pre-commit hooks for black and isort",
+   "expect": "abstain",
+   "forbidden": [
+    "oe-005"
+   ]
+  },
+  {
+   "id": "oi-c8",
+   "split": "dev",
+   "category": "negative",
+   "project": "orbit-ingest",
+   "query": "ingest job crashes with KeyError: 'amount' on a malformed row",
+   "expect": "abstain",
+   "forbidden": [
+    "oe-001"
+   ]
+  },
+  {
+   "id": "oi-c9",
+   "split": "dev",
+   "category": "multi_record",
+   "project": "orbit-ingest",
+   "query": "get a fresh checkout green on the runner and raise ingest throughput",
+   "expect": "match",
+   "required": [
+    [
+     "oi-001"
+    ],
+    [
+     "oi-002",
+     "oi-005"
+    ]
+   ],
+   "relevant": [
+    "oi-001",
+    "oi-002",
+    "oi-005"
+   ]
+  },
+  {
+   "id": "oi-c10",
+   "split": "dev",
+   "category": "paraphrase",
+   "project": "orbit-ingest",
+   "query": "ingestion throughput is bad, what is actually the bottleneck",
+   "expect": "match",
+   "relevant": [
+    "oi-005"
+   ],
+   "misleading": [
+    "oi-004"
+   ]
+  },
+  {
+   "id": "oi-c11",
+   "split": "dev",
+   "category": "paraphrase",
+   "project": "orbit-ingest",
+   "query": "pipeline green on my machine, red in the runner, import of the sibling lib fails",
+   "expect": "match",
+   "relevant": [
+    "oi-001"
+   ],
+   "misleading": [
+    "oe-001"
+   ],
+   "forbidden": [
+    "oe-001"
+   ]
+  },
+  {
+   "id": "oe-c2",
+   "split": "dev",
+   "category": "contradiction",
+   "project": "orbit-export",
+   "query": "pin pandas below 2 in requirements.txt",
+   "expect": "match",
+   "relevant": [
+    "oe-003"
+   ],
+   "misleading": [
+    "oe-006"
+   ]
+  },
+  {
+   "id": "oe-c3",
+   "split": "dev",
+   "category": "temporal",
+   "project": "orbit-export",
+   "query": "which pandas constraint is right for date handling in the export",
+   "expect": "match",
+   "relevant": [
+    "oe-003"
+   ],
+   "misleading": [
+    "oe-006"
+   ]
+  },
+  {
+   "id": "oe-c4",
+   "split": "dev",
+   "category": "stale_source",
+   "project": "orbit-export",
+   "query": "tests pass locally but fail in a clean env, package under src not importable",
+   "expect": "match",
+   "relevant": [
+    "oe-001"
+   ],
+   "stale_memories": [
+    "m-oe-pythonpath"
+   ],
+   "forbidden": [
+    "oi-001"
+   ]
+  },
+  {
+   "id": "oe-c5",
+   "split": "dev",
+   "category": "path_symbol_command",
+   "project": "orbit-export",
+   "query": "env -u PYTHONPATH pytest -q",
+   "expect": "match",
+   "relevant": [
+    "oe-001"
+   ],
+   "stale_memories": [
+    "m-oe-pythonpath"
+   ],
+   "forbidden": [
+    "oi-001"
+   ]
+  },
+  {
+   "id": "oe-c6",
+   "split": "dev",
+   "category": "negative",
+   "project": "orbit-export",
+   "query": "make lint fails: ruff command not found",
+   "expect": "abstain",
+   "forbidden": [
+    "oi-007"
+   ]
+  },
+  {
+   "id": "oe-c7",
+   "split": "dev",
+   "category": "exact_identifier",
+   "project": "orbit-export",
+   "query": "dtype_backend",
+   "expect": "match",
+   "relevant": [
+    "oe-003"
+   ],
+   "misleading": [
+    "oe-006"
+   ]
+  }
+ ]
+}

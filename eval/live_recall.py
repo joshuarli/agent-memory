@@ -5,6 +5,7 @@ import importlib.util
 import json
 import os
 import re
+import shlex
 import stat
 import subprocess
 import sys
@@ -12,16 +13,17 @@ import tempfile
 import time
 from pathlib import Path
 
-REPOSITORY = Path(__file__).resolve().parents[2]
-SRC = REPOSITORY / "agent-memory/src"
-SHIM = REPOSITORY / "dotfiles/base/.local/bin/agent-learn"
-sys.path.insert(0, str(SRC))
-SPEC = importlib.util.spec_from_file_location("agent_learning_live", REPOSITORY / "agent-memory/eval/live_learning.py")
+REPOSITORY = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(REPOSITORY / "tests"))
+import testkit  # noqa: E402
+USR_ROOT = Path(os.environ.get("AGENT_MEMORY_USR_ROOT") or Path.home() / "usr")
+sys.path.insert(0, str(testkit.SRC))
+SPEC = importlib.util.spec_from_file_location("agent_learning_live", REPOSITORY / "eval/live_learning.py")
 assert SPEC is not None
 LIVE = importlib.util.module_from_spec(SPEC)
 assert SPEC.loader is not None
 SPEC.loader.exec_module(LIVE)
-BENCH_SPEC = importlib.util.spec_from_file_location("agent_recall_bench", REPOSITORY / "agent-memory/eval/bench_recall.py")
+BENCH_SPEC = importlib.util.spec_from_file_location("agent_recall_bench", REPOSITORY / "eval/bench_recall.py")
 assert BENCH_SPEC is not None
 BENCH = importlib.util.module_from_spec(BENCH_SPEC)
 assert BENCH_SPEC.loader is not None
@@ -66,21 +68,21 @@ def _git(cwd, *args):
     return subprocess.run(["git", "-C", str(cwd), *args], check=True, capture_output=True, text=True).stdout.strip()
 
 
-def recall_guidance():
-    text = (REPOSITORY / "dotfiles/base/.agents/skills/do/SKILL.md").read_text(encoding="utf-8")
+def recall_guidance(usr_root):
+    text = (Path(usr_root) / "dotfiles/base/.agents/skills/do/SKILL.md").read_text(encoding="utf-8")
     line = next(row for row in text.splitlines() if row.startswith(GUIDANCE_START))
-    return line.replace("~/usr/agent-memory/README.md", "the project documentation")
+    return re.sub(r"`?\S*agent-memory\S*README\.md`?", "the project documentation", line)
 
 
-def write_repository(root, with_guidance):
+def write_repository(root, guidance):
     root.mkdir(parents=True)
     for relative, content in FIXTURE_FILES.items():
         path = root / relative
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(content, encoding="utf-8")
     instructions = "# Project instructions\n\nWork carefully and report evidence.\n"
-    if with_guidance:
-        instructions += "\n## Prior experience\n\n`agent-learn` is on PATH.\n\n" + recall_guidance() + "\n"
+    if guidance is not None:
+        instructions += "\n## Prior experience\n\n`agent-learn` is on PATH.\n\n" + guidance + "\n"
     (root / "AGENTS.md").write_text(instructions, encoding="utf-8")
     _git(root, "init", "-q", "-b", "main")
     _git(root, "config", "user.name", "Live Evaluation")
@@ -110,8 +112,8 @@ def write_shim(repo):
     shim_dir.mkdir(parents=True, exist_ok=True)
     shim = shim_dir / "agent-learn"
     shim.write_text(
-        "#!/bin/sh\nCODEX_HOME=\"%s\" exec %s %s --state-dir \"%s\" \"$@\"\n"
-        % (repo / ".agent/codex", sys.executable, SHIM, repo / ".agent/state"),
+        "#!/bin/sh\nCODEX_HOME=\"%s\" exec %s --state-dir \"%s\" \"$@\"\n"
+        % (repo / ".agent/codex", shlex.join(testkit.command("agent-learn")), repo / ".agent/state"),
         encoding="utf-8",
     )
     shim.chmod(shim.stat().st_mode | stat.S_IXUSR)
@@ -190,7 +192,7 @@ def verdict(summary, runs):
 
 def run_arm(codex, reviewer, scratch, arm, index, prompt_schema):
     repo = scratch / ("%s-%d" % (arm, index))
-    write_repository(repo, with_guidance=arm != "baseline")
+    write_repository(repo, recall_guidance(USR_ROOT) if arm != "baseline" else None)
     if arm != "baseline":
         install_memory(repo)
     shim_dir = write_shim(repo)
@@ -206,7 +208,7 @@ def run_arm(codex, reviewer, scratch, arm, index, prompt_schema):
 
 def live(runs):
     TMP_ROOT.mkdir(parents=True, exist_ok=True)
-    reviewer = LIVE.REVIEW.CodexReviewer(REPOSITORY, TMP_ROOT)
+    reviewer = LIVE.REVIEW.CodexReviewer(USR_ROOT, TMP_ROOT)
     capabilities = reviewer.capabilities()
     if capabilities.get("status") != "ok":
         return {"status": "unavailable", "reason": capabilities.get("reason", "codex_unavailable")}

@@ -1,0 +1,460 @@
+{
+ "now": "2026-10-20T12:00:00Z",
+ "projects": {
+  "assetpipe": {
+   "files": {
+    "Cargo.toml": "[package]\nname = \"assetpipe\"\nversion = \"0.3.0\"\nedition = \"2021\"\n\n[dependencies]\ntexpress = { version = \"0.4\", features = [\"ktx2\"] }\nrayon = \"1.10\"\n",
+    "assets.toml": "bake_threads = 4\nmax_mips = 12\ncache_dir = \".bakecache\"\n",
+    "src/main.rs": "fn main() {}\n",
+    "src/bake.rs": "pub fn bake_all() {}\n",
+    "README.md": "Texture and mesh bake pipeline for the engine.\n"
+   }
+  }
+ },
+ "episodes": [
+  {
+   "id": "ap-oom-bake",
+   "project": "assetpipe",
+   "harness": "codex",
+   "age_days": 22,
+   "turns": [
+    {
+     "user": "The bake step dies in the docker build with no error message."
+    },
+    {
+     "tool": {
+      "cmd": "docker run --rm -m 6g assetpipe bake --all",
+      "output": "baking 412 textures\nthread 'bake-3' panicked at 'memory allocation of 268435456 bytes failed'\nKilled",
+      "exit": 137
+     }
+    },
+    {
+     "assistant": "Rayon spawns one worker per core (32 here) and each loads every mip level of the 8k textures, so peak memory is far above the container limit. Setting bake_threads = 4 in assets.toml and measuring."
+    },
+    {
+     "tool": {
+      "cmd": "/usr/bin/time -v docker run --rm -m 6g assetpipe bake --all 2>&1 | grep -E 'Maximum resident|Exit status|baked'",
+      "output": "baked 412 textures in 143s\n\tMaximum resident set size (kbytes): 5136028\n\tExit status: 0",
+      "exit": 0
+     }
+    }
+   ],
+   "native_id": "rollout-19c4a7"
+  },
+  {
+   "id": "ap-oom-wrong",
+   "project": "assetpipe",
+   "harness": "grok",
+   "age_days": 23,
+   "turns": [
+    {
+     "user": "Bake gets killed in docker."
+    },
+    {
+     "assistant": "Setting RAYON_NUM_THREADS=2 should keep memory down, that fixes the OOM."
+    },
+    {
+     "tool": {
+      "cmd": "docker run --rm -m 6g -e RAYON_NUM_THREADS=2 assetpipe bake --all",
+      "output": "baking 412 textures\nKilled",
+      "exit": 137
+     }
+    },
+    {
+     "assistant": "It still gets killed but I think it is flaky now. Leaving it."
+    }
+   ]
+  },
+  {
+   "id": "ap-ktx2",
+   "project": "assetpipe",
+   "harness": "claude",
+   "age_days": 48,
+   "turns": [
+    {
+     "user": "Export KTX2 from the bake step."
+    },
+    {
+     "tool": {
+      "cmd": "cargo build 2>&1 | tail -n 8",
+      "output": "error[E0599]: no method named `to_ktx2` found for struct `Image` in the current scope\n  --> src/bake.rs:88:24\n   |\n88 |     let blob = image.to_ktx2(&opts)?;\n   |                      ^^^^^^^ method not found in `Image`\nerror: could not compile `assetpipe` (bin \"assetpipe\") due to 1 previous error",
+      "exit": 101
+     }
+    },
+    {
+     "assistant": "to_ktx2 is behind the ktx2 cargo feature of texpress, which our Cargo.toml does not enable."
+    },
+    {
+     "tool": {
+      "cmd": "sed -i 's/texpress = \"0.4\"/texpress = { version = \"0.4\", features = [\"ktx2\"] }/' Cargo.toml && cargo build",
+      "output": "   Compiling texpress v0.4.2\n   Compiling assetpipe v0.3.0\n    Finished dev [unoptimized + debuginfo] target(s) in 18.40s",
+      "exit": 0
+     }
+    },
+    {
+     "assistant": "Builds. Running the exporter on the sample set produced 12 valid files."
+    },
+    {
+     "tool": {
+      "cmd": "cargo test ktx2",
+      "output": "test bake::tests::ktx2_roundtrip ... ok\ntest result: ok. 1 passed; 0 failed",
+      "exit": 0
+     }
+    },
+    {
+     "assistant": "Done, merged into the branch."
+    },
+    {
+     "user": "thanks"
+    },
+    {
+     "assistant": "Anything else?"
+    }
+   ],
+   "malformed": "garbage_line"
+  },
+  {
+   "id": "ap-hash-mtime",
+   "project": "assetpipe",
+   "harness": "grok",
+   "age_days": 75,
+   "turns": [
+    {
+     "user": "Make the bake cache key the file's modification time plus importer version."
+    },
+    {
+     "assistant": "Using mtime for cheap invalidation."
+    },
+    {
+     "user": "No. mtime is wrong here. On CI every file looks freshly checked out so nothing is ever cached. Key on a hash of the source file bytes plus the importer version."
+    },
+    {
+     "tool": {
+      "cmd": "cargo test cache_key",
+      "output": "test cache::tests::key_changes_with_importer_version ... ok\ntest cache::tests::key_stable_across_touch ... ok\ntest result: ok. 2 passed",
+      "exit": 0
+     }
+    }
+   ]
+  },
+  {
+   "id": "ap-simd-bench",
+   "project": "assetpipe",
+   "harness": "codex",
+   "age_days": 130,
+   "turns": [
+    {
+     "user": "I want a SIMD BC7 encoder, scalar is slow."
+    },
+    {
+     "tool": {
+      "cmd": "cargo bench --bench bc7",
+      "output": "bc7/scalar_4k         time:   [40.61 ms 40.82 ms 41.07 ms]\nbc7/simd_avx2_4k      time:   [40.95 ms 41.22 ms 41.55 ms]\n",
+      "exit": 0
+     }
+    },
+    {
+     "assistant": "AVX2 is not faster. perf shows the encode loop is memory bound on the 64 MB source image, cache misses dominate. Compute is not the limit."
+    },
+    {
+     "user": "OK, shelve SIMD. If bake time matters we look at tiling the source reads."
+    }
+   ]
+  },
+  {
+   "id": "ap-cache-decision",
+   "project": "assetpipe",
+   "harness": "claude",
+   "age_days": 210,
+   "turns": [
+    {
+     "user": "Should we share the bake cache across the team through an S3 bucket?"
+    },
+    {
+     "tool": {
+      "cmd": "rg -n 'f32|to_bits' src/bake.rs",
+      "output": "src/bake.rs:140:    let weight = (luma as f32).powf(2.2);\nsrc/bake.rs:141:    key.update(&weight.to_bits().to_le_bytes());",
+      "exit": 0
+     }
+    },
+    {
+     "assistant": "Baked output depends on float math (powf, fused multiply-add on some CPUs), so the same source can bake to different bytes on different machines. A shared cache would flip artifacts between builds and break reproducible comparisons."
+    },
+    {
+     "user": "Then no shared cache. Keep it per machine in .bakecache."
+    }
+   ]
+  },
+  {
+   "id": "ap-clippy",
+   "project": "assetpipe",
+   "harness": "codex",
+   "age_days": 9,
+   "turns": [
+    {
+     "user": "Fix clippy warnings in src/bake.rs."
+    },
+    {
+     "tool": {
+      "cmd": "cargo clippy -- -D warnings",
+      "output": "    Checking assetpipe v0.3.0\n    Finished dev [unoptimized + debuginfo] target(s) in 2.10s",
+      "exit": 0
+     }
+    },
+    {
+     "assistant": "Done. Nothing else needs changing."
+    }
+   ]
+  },
+  {
+   "id": "ap-rename-muse",
+   "project": "assetpipe",
+   "harness": "muse",
+   "age_days": 4,
+   "turns": [
+    {
+     "user": "rename bake_all to bake_everything"
+    },
+    {
+     "user": "check the docs mention it"
+    },
+    {
+     "user": "ok, that's all for now"
+    }
+   ]
+  },
+  {
+   "id": "ap-bump-image",
+   "project": "assetpipe",
+   "harness": "claude",
+   "age_days": 14,
+   "turns": [
+    {
+     "user": "Update the image crate."
+    },
+    {
+     "tool": {
+      "cmd": "cargo update -p image && cargo build",
+      "output": "    Updating image v0.25.1 -> v0.25.2\n    Finished dev [unoptimized + debuginfo] target(s) in 6.02s",
+      "exit": 0
+     }
+    },
+    {
+     "assistant": "Done. Nothing else needs changing."
+    }
+   ]
+  }
+ ],
+ "memories": [
+  {
+   "id": "m-ap-threads",
+   "project": "assetpipe",
+   "age_days": 21,
+   "action": "Limit bake parallelism with bake_threads = 4 in assets.toml; the default one-worker-per-core exceeds container memory (peak RSS 5.1 GB for 412 textures).",
+   "applicability": "Bake is OOM-killed (exit 137) in docker or on CI.",
+   "sources": [
+    {
+     "episode": "ap-oom-bake",
+     "contains": "Setting bake_threads = 4 in assets.toml"
+    }
+   ],
+   "validity": [
+    {
+     "path": "assets.toml",
+     "contains": "bake_threads = 4"
+    }
+   ]
+  }
+ ],
+ "mutations": [
+  {
+   "project": "assetpipe",
+   "path": "assets.toml",
+   "content": "bake_threads = 0\nmax_mips = 12\ncache_dir = \".bakecache\"\n",
+   "commit": true
+  }
+ ],
+ "cases": [
+  {
+   "id": "ap-short-oom",
+   "split": "heldout",
+   "category": "paraphrase",
+   "project": "assetpipe",
+   "query": "OOM",
+   "expect": "match",
+   "relevant": [
+    "ap-oom-bake"
+   ],
+   "misleading": [
+    "ap-oom-wrong"
+   ]
+  },
+  {
+   "id": "ap-contra-rayon",
+   "split": "heldout",
+   "category": "contradiction",
+   "project": "assetpipe",
+   "query": "RAYON_NUM_THREADS=2 but the bake still gets killed with exit 137",
+   "expect": "match",
+   "relevant": [
+    "ap-oom-bake"
+   ],
+   "misleading": [
+    "ap-oom-wrong"
+   ]
+  },
+  {
+   "id": "ap-contra-flaky",
+   "split": "heldout",
+   "category": "contradiction",
+   "project": "assetpipe",
+   "query": "bake killed in docker, someone said fixing worker count solves it",
+   "expect": "match",
+   "relevant": [
+    "ap-oom-bake"
+   ],
+   "misleading": [
+    "ap-oom-wrong"
+   ]
+  },
+  {
+   "id": "ap-exact-ktx2",
+   "split": "heldout",
+   "category": "exact_identifier",
+   "project": "assetpipe",
+   "query": "no method named `to_ktx2` found for struct `Image`",
+   "expect": "match",
+   "relevant": [
+    "ap-ktx2"
+   ]
+  },
+  {
+   "id": "ap-mal-ktx2",
+   "split": "heldout",
+   "category": "malformed",
+   "project": "assetpipe",
+   "query": "which cargo feature of texpress exports KTX2",
+   "expect": "match",
+   "relevant": [
+    "ap-ktx2"
+   ]
+  },
+  {
+   "id": "ap-para-fresh",
+   "split": "heldout",
+   "category": "paraphrase",
+   "project": "assetpipe",
+   "query": "every artifact is regenerated on a fresh clone in the build server",
+   "expect": "match",
+   "relevant": [
+    "ap-hash-mtime"
+   ]
+  },
+  {
+   "id": "ap-traj-simd",
+   "split": "heldout",
+   "category": "trajectory",
+   "project": "assetpipe",
+   "query": "would vectorizing the BC7 compressor speed up bakes",
+   "expect": "match",
+   "relevant": [
+    "ap-simd-bench"
+   ]
+  },
+  {
+   "id": "ap-nonobv-cache",
+   "split": "heldout",
+   "category": "nonobvious_success",
+   "project": "assetpipe",
+   "query": "why not publish baked results to a shared bucket for the team",
+   "expect": "match",
+   "relevant": [
+    "ap-cache-decision"
+   ]
+  },
+  {
+   "id": "ap-path-toml",
+   "split": "heldout",
+   "category": "path_symbol_command",
+   "project": "assetpipe",
+   "query": "assets.toml bake_threads",
+   "expect": "match",
+   "relevant": [
+    "ap-oom-bake"
+   ],
+   "valid_memories": [
+    "m-ap-threads"
+   ]
+  },
+  {
+   "id": "ap-stale-threads",
+   "split": "heldout",
+   "category": "stale_source",
+   "project": "assetpipe",
+   "query": "how many bake threads should containers use",
+   "expect": "match",
+   "relevant": [
+    "ap-oom-bake"
+   ],
+   "stale_memories": [
+    "m-ap-threads"
+   ]
+  },
+  {
+   "id": "ap-coll-alloc",
+   "split": "heldout",
+   "category": "id_collision",
+   "project": "assetpipe",
+   "query": "memory allocation of 268435456 bytes failed in bake thread",
+   "expect": "match",
+   "relevant": [
+    "ap-oom-bake"
+   ],
+   "misleading": [
+    "ap-oom-wrong"
+   ],
+   "forbidden": [
+    "nb-timeout"
+   ]
+  },
+  {
+   "id": "ap-multi",
+   "split": "heldout",
+   "category": "multi_record",
+   "project": "assetpipe",
+   "query": "bake OOM in the container and how the cache key is derived",
+   "expect": "match",
+   "relevant": [
+    "ap-oom-bake",
+    "ap-hash-mtime"
+   ],
+   "required": [
+    [
+     "ap-oom-bake"
+    ],
+    [
+     "ap-hash-mtime"
+    ]
+   ],
+   "misleading": [
+    "ap-oom-wrong"
+   ]
+  },
+  {
+   "id": "ap-neg-astc",
+   "split": "heldout",
+   "category": "negative",
+   "project": "assetpipe",
+   "query": "add ASTC texture compression for mobile targets",
+   "expect": "abstain"
+  },
+  {
+   "id": "ap-neg-dedupe",
+   "split": "heldout",
+   "category": "negative",
+   "project": "assetpipe",
+   "query": "deduplicate identical meshes during bake",
+   "expect": "abstain"
+  }
+ ]
+}

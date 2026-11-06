@@ -1,0 +1,533 @@
+{
+ "now": "2026-10-20T12:00:00Z",
+ "projects": {
+  "libfrob": {
+   "files": {
+    "Makefile": "CC ?= gcc\nCFLAGS = -O2 -Wall -fPIC\nLDLIBS = -lpthread -lm\nOBJS = src/net.o src/frob.o\n\nlibfrob.so: $(OBJS)\n\t$(CC) -shared -o $@ $(OBJS) $(LDLIBS)\n\nasan-test:\n\t$(CC) -fsanitize=address -g -o t tests/all.c src/frob.c && ./t\n",
+    "src/net.c": "#include <pthread.h>\n\nint frob_start(void) { pthread_t t; return pthread_create(&t, 0, 0, 0); }\n",
+    "src/frob.c": "int frob_close(void) { return 0; }\n",
+    "include/frob.h": "struct frob_opts { int flags; int timeout_ms; };\n",
+    "frob.map": "FROB_1.0 { global: frob_*; local: *; };\n"
+   }
+  },
+  "frobd": {
+   "files": {
+    "Makefile": "CC = gcc\nCFLAGS = -O2 -Wall -pthread\nOBJS = src/main.o src/net.o\n\nfrobd: $(OBJS)\n\t$(CC) -pthread -o $@ $(OBJS)\n",
+    "src/net.c": "#include <sys/epoll.h>\n\nint serve(int ep, struct epoll_event *ev) { return epoll_wait(ep, ev, 64, 10); }\n",
+    "src/main.c": "int serve(int, void *);\nint main(void) { return 0; }\n"
+   }
+  }
+ },
+ "episodes": [
+  {
+   "id": "lf-001",
+   "project": "libfrob",
+   "harness": "codex",
+   "age_days": 45,
+   "turns": [
+    {
+     "user": "link fails on the Ubuntu builder: make libfrob.so"
+    },
+    {
+     "tool": {
+      "cmd": "make libfrob.so",
+      "output": "gcc -shared -o libfrob.so -lpthread -lm src/net.o src/frob.o\n/usr/bin/ld: src/net.o: in function `frob_start':\nnet.c:(.text+0x2a): undefined reference to `pthread_create'\ncollect2: error: ld returned 1 exit status\nmake: *** [Makefile:6: libfrob.so] Error 1",
+      "exit": 2
+     }
+    },
+    {
+     "assistant": "Ubuntu's gcc defaults to --as-needed, so a library named before the objects that use it is dropped. -lpthread is first on the link line."
+    },
+    {
+     "tool": {
+      "cmd": "make libfrob.so",
+      "output": "gcc -shared -o libfrob.so src/net.o src/frob.o -lpthread -lm",
+      "exit": 0
+     }
+    },
+    {
+     "tool": {
+      "cmd": "nm -D libfrob.so | grep pthread_create",
+      "output": "                 U pthread_create@GLIBC_2.2.5",
+      "exit": 0
+     }
+    }
+   ]
+  },
+  {
+   "id": "lf-002",
+   "project": "libfrob",
+   "harness": "claude",
+   "age_days": 100,
+   "turns": [
+    {
+     "user": "frob_close crashes sometimes in the integration tests"
+    },
+    {
+     "tool": {
+      "cmd": "make asan-test",
+      "output": "==31877==ERROR: AddressSanitizer: heap-use-after-free on address 0x60300000e0b0 at pc 0x0000004c2f1d\nREAD of size 8 at 0x60300000e0b0 thread T0\n    #0 0x4c2f1c in frob_close src/frob.c:112\nfreed by thread T0 here:\n    #0 0x49d0e2 in free\n    #1 0x4c2a40 in frob_reset src/frob.c:88\nSUMMARY: AddressSanitizer: heap-use-after-free src/frob.c:112 in frob_close",
+      "exit": 1
+     }
+    },
+    {
+     "assistant": "frob_reset frees ctx->buf and frob_close still reads ctx->buf->len on the error path. Null the pointer after free and guard the read."
+    },
+    {
+     "tool": {
+      "cmd": "make asan-test",
+      "output": "17 tests, 0 failures",
+      "exit": 0
+     }
+    }
+   ]
+  },
+  {
+   "id": "lf-004",
+   "project": "libfrob",
+   "harness": "grok",
+   "age_days": 70,
+   "turns": [
+    {
+     "user": "add a frob_version() accessor"
+    },
+    {
+     "assistant": "Added int frob_version(void) returning FROB_VERSION to src/frob.c and declared it in frob.h."
+    },
+    {
+     "tool": {
+      "cmd": "make libfrob.so && make asan-test",
+      "output": "gcc -shared -o libfrob.so src/net.o src/frob.o -lpthread -lm\n17 tests, 0 failures",
+      "exit": 0
+     }
+    }
+   ]
+  },
+  {
+   "id": "lf-005",
+   "project": "libfrob",
+   "harness": "grok",
+   "age_days": 220,
+   "turns": [
+    {
+     "user": "can I add a retries field in the middle of struct frob_opts?"
+    },
+    {
+     "tool": {
+      "cmd": "nm -D --defined-only libfrob.so | grep frob_",
+      "output": "0000000000001180 T frob_open@@FROB_1.0\n00000000000011f0 T frob_close@@FROB_1.0\n0000000000001260 T frob_start@@FROB_1.0",
+      "exit": 0
+     }
+    },
+    {
+     "tool": {
+      "cmd": "cat frob.map",
+      "output": "FROB_1.0 { global: frob_*; local: *; };",
+      "exit": 0
+     }
+    },
+    {
+     "assistant": "frobd on customer machines is built against FROB_1.0 and passes struct frob_opts by pointer with sizeof baked in. New fields may only be appended and gated by a flags bit; inserting mid-struct would silently shift timeout_ms for old callers. Bump the soname only for a major version."
+    }
+   ]
+  },
+  {
+   "id": "fd-001",
+   "project": "frobd",
+   "harness": "codex",
+   "age_days": 33,
+   "turns": [
+    {
+     "user": "frobd won't link on the build box, undefined reference to pthread_create"
+    },
+    {
+     "tool": {
+      "cmd": "make frobd",
+      "output": "gcc -o frobd src/main.o src/net.o\n/usr/bin/ld: src/net.o: in function `serve':\nnet.c:(.text+0x51): undefined reference to `pthread_create'\ncollect2: error: ld returned 1 exit status\nmake: *** [Makefile:6: frobd] Error 1",
+      "exit": 2
+     }
+    },
+    {
+     "tool": {
+      "cmd": "ldd --version | head -1",
+      "output": "ldd (GNU libc) 2.31",
+      "exit": 0
+     }
+    },
+    {
+     "assistant": "The link rule never sees CFLAGS, and -pthread was only in CFLAGS. On glibc 2.31 pthread_create still lives in libpthread, so the link step needs -pthread itself."
+    },
+    {
+     "tool": {
+      "cmd": "make frobd",
+      "output": "gcc -pthread -o frobd src/main.o src/net.o",
+      "exit": 0
+     }
+    }
+   ]
+  },
+  {
+   "id": "fd-002",
+   "project": "frobd",
+   "harness": "claude",
+   "age_days": 80,
+   "turns": [
+    {
+     "user": "use epoll_pwait2 in net.c for the timeout precision"
+    },
+    {
+     "tool": {
+      "cmd": "strace -f ./frobd --selftest 2>&1 | tail -2",
+      "output": "epoll_pwait2(5, [], 64, {tv_sec=0, tv_nsec=500000}, NULL, 8) = -1 ENOSYS (Function not implemented)\n+++ exited with 1 +++",
+      "exit": 0
+     }
+    },
+    {
+     "user": "Customers run RHEL 7, kernel 3.10, so epoll_pwait2 (5.11+) is out. Stay on epoll_wait with millisecond timeouts and round up."
+    },
+    {
+     "tool": {
+      "cmd": "./frobd --selftest",
+      "output": "selftest ok",
+      "exit": 0
+     }
+    }
+   ]
+  },
+  {
+   "id": "fd-004",
+   "project": "frobd",
+   "harness": "claude",
+   "age_days": 150,
+   "turns": [
+    {
+     "user": "rename serve() to serve_loop()"
+    },
+    {
+     "tool": {
+      "cmd": "rg -n 'serve\\(' src",
+      "output": "src/main.c:2:int serve(int, void *);\nsrc/net.c:3:int serve(int ep, struct epoll_event *ev)",
+      "exit": 0
+     }
+    },
+    {
+     "assistant": "Renamed in both files."
+    },
+    {
+     "tool": {
+      "cmd": "make frobd",
+      "output": "gcc -pthread -o frobd src/main.o src/net.o",
+      "exit": 0
+     }
+    }
+   ]
+  },
+  {
+   "id": "fd-006",
+   "project": "frobd",
+   "harness": "codex",
+   "age_days": 260,
+   "turns": [
+    {
+     "user": "run valgrind on the selftest and tell me if it is clean"
+    },
+    {
+     "tool": {
+      "cmd": "valgrind --leak-check=full ./frobd --selftest",
+      "output": "==4412== HEAP SUMMARY:\n==4412==     in use at exit: 0 bytes in 0 blocks\n==4412== ERROR SUMMARY: 0 errors from 0 contexts",
+      "exit": 0
+     }
+    },
+    {
+     "assistant": "Clean."
+    }
+   ]
+  }
+ ],
+ "memories": [
+  {
+   "id": "m-lf-linkorder",
+   "project": "libfrob",
+   "age_days": 44,
+   "action": "On Ubuntu toolchains gcc passes --as-needed, so list libraries after the objects: $(CC) -shared -o $@ $(OBJS) $(LDLIBS). A pthread_create undefined reference means LDLIBS came first.",
+   "applicability": "Link errors with undefined references while building libfrob.so.",
+   "sources": [
+    {
+     "episode": "lf-001",
+     "contains": "as-needed"
+    }
+   ],
+   "validity": [
+    {
+     "path": "Makefile",
+     "contains": "$(OBJS) $(LDLIBS)"
+    }
+   ]
+  },
+  {
+   "id": "m-fd-epoll",
+   "project": "frobd",
+   "age_days": 79,
+   "action": "Do not use epoll_pwait2 in frobd: customers run RHEL 7 (kernel 3.10) where it returns ENOSYS. Keep epoll_wait with millisecond timeouts, rounding up.",
+   "applicability": "Changing the event loop or timeout precision in frobd net.c.",
+   "sources": [
+    {
+     "episode": "fd-002",
+     "contains": "ENOSYS"
+    }
+   ],
+   "validity": [
+    {
+     "path": "src/net.c",
+     "contains": "epoll_wait("
+    }
+   ]
+  }
+ ],
+ "mutations": [
+  {
+   "project": "libfrob",
+   "path": "Makefile",
+   "content": "CC ?= gcc\nCFLAGS = -O2 -Wall -fPIC\nLDLIBS = -lpthread -lm\n\nlibfrob.so: src/net.o src/frob.o\n\t$(LINK.c) -shared $^ $(LDLIBS) -o $@\n",
+   "commit": true
+  },
+  {
+   "project": "frobd",
+   "path": "src/net.c",
+   "content": "#include <sys/epoll.h>\n\nint serve(int ep, struct epoll_event *ev) { return epoll_pwait2(ep, ev, 64, 0, 0); }\n",
+   "commit": false
+  }
+ ],
+ "cases": [
+  {
+   "id": "lf-c1",
+   "split": "dev",
+   "category": "similar_project",
+   "project": "libfrob",
+   "query": "undefined reference to `pthread_create' when linking",
+   "expect": "match",
+   "relevant": [
+    "lf-001"
+   ],
+   "stale_memories": [
+    "m-lf-linkorder"
+   ],
+   "misleading": [
+    "fd-001"
+   ],
+   "forbidden": [
+    "fd-001"
+   ]
+  },
+  {
+   "id": "fd-c1",
+   "split": "dev",
+   "category": "similar_project",
+   "project": "frobd",
+   "query": "undefined reference to `pthread_create' when linking",
+   "expect": "match",
+   "relevant": [
+    "fd-001"
+   ],
+   "misleading": [
+    "lf-001"
+   ],
+   "forbidden": [
+    "lf-001"
+   ]
+  },
+  {
+   "id": "lf-c2",
+   "split": "dev",
+   "category": "stale_source",
+   "project": "libfrob",
+   "query": "shared library build drops the thread library on newer toolchains",
+   "expect": "match",
+   "relevant": [
+    "lf-001"
+   ],
+   "stale_memories": [
+    "m-lf-linkorder"
+   ],
+   "forbidden": [
+    "fd-001"
+   ]
+  },
+  {
+   "id": "lf-c3",
+   "split": "dev",
+   "category": "paraphrase",
+   "project": "libfrob",
+   "query": "ABI",
+   "expect": "match",
+   "relevant": [
+    "lf-005"
+   ],
+   "forbidden": [
+    "fd-002"
+   ]
+  },
+  {
+   "id": "lf-c4",
+   "split": "dev",
+   "category": "nonobvious_success",
+   "project": "libfrob",
+   "query": "can a new field go in the middle of frob_opts",
+   "expect": "match",
+   "relevant": [
+    "lf-005"
+   ]
+  },
+  {
+   "id": "lf-c5",
+   "split": "dev",
+   "category": "exact_identifier",
+   "project": "libfrob",
+   "query": "AddressSanitizer: heap-use-after-free frob_close",
+   "expect": "match",
+   "relevant": [
+    "lf-002"
+   ],
+   "forbidden": [
+    "fd-006"
+   ]
+  },
+  {
+   "id": "lf-c6",
+   "split": "dev",
+   "category": "negative",
+   "project": "libfrob",
+   "query": "frob_open returns EINVAL when timeout_ms is zero",
+   "expect": "abstain",
+   "forbidden": [
+    "fd-004"
+   ]
+  },
+  {
+   "id": "lf-c7",
+   "split": "dev",
+   "category": "negative",
+   "project": "libfrob",
+   "query": "linker error: cannot find -lssl while building libfrob.so",
+   "expect": "abstain",
+   "forbidden": [
+    "fd-001"
+   ]
+  },
+  {
+   "id": "lf-c8",
+   "split": "dev",
+   "category": "paraphrase",
+   "project": "libfrob",
+   "query": "shared object fails to link on ubuntu, thread library silently ignored",
+   "expect": "match",
+   "relevant": [
+    "lf-001"
+   ],
+   "stale_memories": [
+    "m-lf-linkorder"
+   ],
+   "misleading": [
+    "fd-001"
+   ],
+   "forbidden": [
+    "fd-001"
+   ]
+  },
+  {
+   "id": "lf-c9",
+   "split": "dev",
+   "category": "paraphrase",
+   "project": "libfrob",
+   "query": "intermittent crash on teardown path in the integration suite, memory touched after release",
+   "expect": "match",
+   "relevant": [
+    "lf-002"
+   ]
+  },
+  {
+   "id": "fd-c2",
+   "split": "dev",
+   "category": "trajectory",
+   "project": "frobd",
+   "query": "swap epoll_wait for epoll_pwait2 to get sub-millisecond timeouts",
+   "expect": "match",
+   "relevant": [
+    "fd-002"
+   ],
+   "stale_memories": [
+    "m-fd-epoll"
+   ],
+   "forbidden": [
+    "lf-005"
+   ]
+  },
+  {
+   "id": "fd-c3",
+   "split": "dev",
+   "category": "version",
+   "project": "frobd",
+   "query": "epoll_pwait2 returns ENOSYS on kernel 3.10",
+   "expect": "match",
+   "relevant": [
+    "fd-002"
+   ],
+   "stale_memories": [
+    "m-fd-epoll"
+   ]
+  },
+  {
+   "id": "fd-c4",
+   "split": "dev",
+   "category": "stale_source",
+   "project": "frobd",
+   "query": "why does serve() use millisecond timeouts",
+   "expect": "match",
+   "relevant": [
+    "fd-002"
+   ],
+   "stale_memories": [
+    "m-fd-epoll"
+   ]
+  },
+  {
+   "id": "fd-c5",
+   "split": "dev",
+   "category": "paraphrase",
+   "project": "frobd",
+   "query": "binary refuses to link on the old CentOS builder, thread creation symbol unresolved",
+   "expect": "match",
+   "relevant": [
+    "fd-001"
+   ],
+   "misleading": [
+    "lf-001"
+   ],
+   "forbidden": [
+    "lf-001"
+   ]
+  },
+  {
+   "id": "fd-c6",
+   "split": "dev",
+   "category": "negative",
+   "project": "frobd",
+   "query": "frobd segfaults when SIGHUP reloads the config",
+   "expect": "abstain",
+   "forbidden": [
+    "lf-002"
+   ]
+  },
+  {
+   "id": "fd-c7",
+   "split": "dev",
+   "category": "path_symbol_command",
+   "project": "frobd",
+   "query": "ldd --version",
+   "expect": "match",
+   "relevant": [
+    "fd-001"
+   ]
+  }
+ ]
+}

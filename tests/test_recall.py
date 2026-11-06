@@ -10,13 +10,14 @@ import unittest
 from pathlib import Path
 from typing import Any
 
-ROOT = Path(__file__).resolve().parents[2]
-SRC = ROOT / "agent-memory" / "src"
-SHIM = ROOT / "dotfiles" / "base" / ".local" / "bin" / "agent-learn"
+ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / "tests"))
+import testkit  # noqa: E402
+SRC = testkit.SRC
 WORK_TMP = ROOT / ".work" / "tmp"
 WORK_TMP.mkdir(parents=True, exist_ok=True)
 sys.path.insert(0, str(SRC))
-SPEC = importlib.util.spec_from_file_location("agent_recall_bench", ROOT / "agent-memory" / "eval" / "bench_recall.py")
+SPEC = importlib.util.spec_from_file_location("agent_recall_bench", ROOT / "eval" / "bench_recall.py")
 assert SPEC is not None
 BENCH = importlib.util.module_from_spec(SPEC)
 assert SPEC.loader is not None
@@ -27,6 +28,15 @@ from agent_memory import experience as agent_experience  # noqa: E402
 from agent_memory import learning as agent_learning  # noqa: E402
 from agent_memory import recall as agent_recall  # noqa: E402
 from agent_memory import store as agent_session_store  # noqa: E402
+
+USR = Path()
+
+
+def setUpModule():
+    global USR
+    temp = tempfile.TemporaryDirectory(dir=str(WORK_TMP), prefix="usr-target-")
+    unittest.addModuleCleanup(temp.cleanup)
+    USR = testkit.create_usr_target(Path(temp.name) / "usr")
 
 NOW = "2026-10-20T12:00:00Z"
 
@@ -546,7 +556,7 @@ class BudgetTests(RecallCase):
 
         self.build(lesson_world(), observe=False)
         self.learner.reviewer = Exploding()
-        self.learner.enable(self.world.cwd("alpha"), ROOT, 0)
+        self.learner.enable(self.world.cwd("alpha"), USR, 0)
         self.learner.observe_enable(self.world.cwd("beta"), 0)
         totals = self.learner.reconcile(self.world.now, roots=self.world.root_args(), stable_seconds=0, local_only=True)
         self.assertEqual(totals["reviews"], 0)
@@ -597,7 +607,7 @@ class ReviewRegressionTests(RecallCase):
             {"user": "tests fail again"}, tool("pytest -q tests/test_ingest.py", PYTEST_FAIL, 1),
             tool("pip install -e .", "Successfully installed orbit-core", 0), tool("pytest -q tests/test_ingest.py", "1 passed in 0.4s", 0)], age=3))
         self.build(spec, observe=False)
-        self.learner.enable(self.world.cwd("alpha"), ROOT, self.world.now - 10 * 86400)
+        self.learner.enable(self.world.cwd("alpha"), USR, self.world.now - 10 * 86400)
         self.learner.observe_project(self.ident["alpha"], self.world.cwd("alpha"), self.world.now, 0)
         sessions = {row[0] for row in self.store.db.execute("SELECT session FROM learning_incidents WHERE signal = 'experience'")}
         self.assertEqual(sessions, {"a-3"})
@@ -606,10 +616,10 @@ class ReviewRegressionTests(RecallCase):
         spec = lesson_world()
         self.build(spec, observe=False)
         grant = self.world.now - 5 * 86400
-        self.learner.enable_all(ROOT, grant)
+        self.learner.enable_all(USR, grant)
         with self.store.db:
             self.store.db.execute("INSERT OR REPLACE INTO learning_projects(project,cwd,enabled,enabled_at,repository,grant_source) VALUES(?,?,1,?,?,'global')",
-                                  (self.ident["alpha"], str(self.world.cwd("alpha")), grant, str(ROOT)))
+                                  (self.ident["alpha"], str(self.world.cwd("alpha")), grant, str(USR)))
             self.store.db.execute("DELETE FROM sessions")
         self.learner.reconcile(self.world.now, roots=self.world.root_args(), stable_seconds=0, local_only=True)
         self.assertEqual(self.store.db.execute("SELECT count(*) FROM sessions WHERE id IN ('a-1')").fetchone()[0], 0)
@@ -620,7 +630,7 @@ class ReviewRegressionTests(RecallCase):
             {"user": "tests fail again"}, tool("pytest -q tests/test_ingest.py", PYTEST_FAIL, 1),
             tool("pip install -e .", "Successfully installed orbit-core", 0), tool("pytest -q tests/test_ingest.py", "1 passed in 0.4s", 0)], age=3))
         self.build(spec)
-        self.learner.enable(self.world.cwd("alpha"), ROOT, 0)
+        self.learner.enable(self.world.cwd("alpha"), USR, 0)
         self.learner.observe_project(self.ident["alpha"], self.world.cwd("alpha"), self.world.now, 0)
         self.learner.retrieve(self.ident["alpha"], "ModuleNotFoundError orbit_core", cwd=self.world.cwd("alpha"), now=self.world.now, record=True, session="a-1")
         result = self.learner.forget_session("a-1", 5)
@@ -637,7 +647,7 @@ class ReviewRegressionTests(RecallCase):
 
     def test_forgetting_an_experience_removes_its_pending_review_candidate(self):
         self.build(lesson_world(), observe=False)
-        self.learner.enable(self.world.cwd("alpha"), ROOT, 0)
+        self.learner.enable(self.world.cwd("alpha"), USR, 0)
         self.learner.observe_project(self.ident["alpha"], self.world.cwd("alpha"), self.world.now, 0)
         experience = self.store.db.execute("SELECT id FROM learning_experiences WHERE project = ?", (self.ident["alpha"],)).fetchone()[0]
         self.assertEqual(self.store.db.execute("SELECT count(*) FROM learning_findings WHERE signal = 'experience'").fetchone()[0], 1)
@@ -757,7 +767,7 @@ class SecondReviewRegressionTests(RecallCase):
     def test_bridging_is_not_starved_by_ineligible_older_experiences(self):
         self.build(self.two_session_world(), observe=False)
         db = self.store.db
-        self.learner.enable(self.world.cwd("alpha"), ROOT, self.world.now - 10 * 86400)
+        self.learner.enable(self.world.cwd("alpha"), USR, self.world.now - 10 * 86400)
         with db:
             for index in range(60):
                 cursor = db.execute("INSERT INTO learning_experiences(project,kind,claim,applies_when,identifiers,fingerprint,basis,detector,observed_at,captured_at) "
@@ -995,7 +1005,7 @@ class CommandTests(RecallCase):
         self.env.pop("AGENT_LEARN_WORKER", None)
 
     def run_cli(self, *args, check=True):
-        result = subprocess.run([sys.executable, str(SHIM), "--state-dir", str(self.state), *args], capture_output=True, text=True, env=self.env)
+        result = subprocess.run([*testkit.command("agent-learn"), "--state-dir", str(self.state), *args], capture_output=True, text=True, env=self.env)
         if check:
             self.assertEqual(result.returncode, 0, result.stderr)
         return result
@@ -1043,12 +1053,21 @@ class CommandTests(RecallCase):
     def test_enabling_review_defaults_to_codex_sessions_only(self):
         self.prepare_cli(lesson_world())
         project = self.world.projects["alpha"]["path"]
-        self.run_cli("enable", "--project", str(project), "--usr-root", str(ROOT))
+        self.run_cli("enable", "--project", str(project), "--usr-root", str(USR))
         store = agent_session_store.Store(self.state)
         self.addCleanup(store.close)
         self.assertEqual(store.db.execute("SELECT review_harnesses FROM learning_projects").fetchone()[0], "codex")
-        self.run_cli("enable", "--project", str(project), "--usr-root", str(ROOT), "--harness", "claude", "--harness", "codex")
+        self.run_cli("enable", "--project", str(project), "--usr-root", str(USR), "--harness", "claude", "--harness", "codex")
         self.assertEqual(store.db.execute("SELECT review_harnesses FROM learning_projects").fetchone()[0], "claude,codex")
+
+    def test_enabling_review_without_usr_root_targets_the_home_usr_checkout(self):
+        self.prepare_cli(lesson_world())
+        home_usr = testkit.create_usr_target(Path(self.env["HOME"]) / "usr")
+        project = self.world.projects["alpha"]["path"]
+        self.run_cli("enable", "--project", str(project))
+        store = agent_session_store.Store(self.state)
+        self.addCleanup(store.close)
+        self.assertEqual(store.db.execute("SELECT repository FROM learning_projects").fetchone()[0], str(home_usr.resolve()))
 
 
 class BridgeTests(RecallCase):
@@ -1062,11 +1081,11 @@ class BridgeTests(RecallCase):
 
     def test_corroborated_experience_enters_the_existing_review_gates_only_for_granted_harnesses(self):
         self.build(self.two_session_spec("claude"), observe=False)
-        self.learner.enable(self.world.cwd("alpha"), ROOT, 0, ("codex",))
+        self.learner.enable(self.world.cwd("alpha"), USR, 0, ("codex",))
         self.learner.observe_project(self.ident["alpha"], self.world.cwd("alpha"), self.world.now, 0)
         incidents = [row[0] for row in self.store.db.execute("SELECT session FROM learning_incidents WHERE signal = 'experience'")]
         self.assertEqual(incidents, ["a-1"])
-        self.learner.enable(self.world.cwd("alpha"), ROOT, 0, ("codex", "claude"))
+        self.learner.enable(self.world.cwd("alpha"), USR, 0, ("codex", "claude"))
         with self.store.db:
             self.store.db.execute("DELETE FROM learning_experience_findings")
         self.learner.observe_project(self.ident["alpha"], self.world.cwd("alpha"), self.world.now, 0)

@@ -2,24 +2,24 @@
 import importlib.util
 import json
 import os
-import re
 import shutil
 import sqlite3
 import stat
 import subprocess
 import sys
 import tempfile
-import tomllib
 import unittest
 from pathlib import Path
 from typing import Any
 from unittest import mock
 
-ROOT = Path(__file__).resolve().parents[2]
+ROOT = Path(__file__).resolve().parents[1]
 WORK_TMP = ROOT / ".work" / "tmp"
 WORK_TMP.mkdir(parents=True, exist_ok=True)
-sys.path.insert(0, str(ROOT / "agent-memory" / "src"))
-MODULE_PATH = ROOT / "agent-memory" / "src" / "agent_memory" / "store.py"
+sys.path.insert(0, str(ROOT / "tests"))
+import testkit  # noqa: E402
+sys.path.insert(0, str(testkit.SRC))
+MODULE_PATH = testkit.SRC / "agent_memory" / "store.py"
 SPEC = importlib.util.spec_from_file_location("agent_session_store", MODULE_PATH)
 assert SPEC is not None
 STORE_MODULE = importlib.util.module_from_spec(SPEC)
@@ -34,25 +34,7 @@ normalize = STORE_MODULE.normalize
 project_identity = STORE_MODULE.project_identity
 redact = STORE_MODULE.redact
 rebuild_index = STORE_MODULE.rebuild_index
-CLI_PATH = ROOT / "dotfiles" / "base" / ".local" / "bin" / "agent-sessions"
-
-
-class LauncherContractTests(unittest.TestCase):
-    def test_launcher_python_floor_matches_project_metadata(self):
-        metadata = tomllib.loads((ROOT / "agent-memory" / "pyproject.toml").read_text())
-        requirement = metadata["project"]["requires-python"]
-        match = re.fullmatch(r">=([0-9]+)\.([0-9]+)", requirement)
-        if match is None:
-            self.fail("agent-memory pyproject.toml must declare a numeric Python minimum")
-        major, minor = (int(part) for part in match.groups())
-        constraint = ">=%d.%d" % (major, minor)
-
-        for command in ("agent-learn", "agent-sessions"):
-            launcher = ROOT / "dotfiles" / "base" / ".local" / "bin" / command
-            source = launcher.read_text()
-            with self.subTest(command=command):
-                self.assertIn("if sys.version_info < (%d, %d):" % (major, minor), source)
-                self.assertIn('"--python", "%s"' % constraint, source)
+CLI = testkit.command("agent-sessions")
 
 
 def metadata(session, cwd, parent=None, source="cli", thread_source="user"):
@@ -505,13 +487,7 @@ class SessionStoreTests(unittest.TestCase):
             self.assertEqual(settled["git_processes"], 0)
 
     def test_populated_v3_database_from_the_previous_release_migrates_in_place(self):
-        ref = "6e301c4"
-        shown = subprocess.run(["git", "-C", str(ROOT), "show", ref + ":dotfiles/base/.local/bin/agent_session_store.py"], capture_output=True)
-        if shown.returncode:
-            self.skipTest("previous release revision is not available in this checkout")
-        old_path = self.root / "agent_session_store_v3.py"
-        old_path.write_bytes(shown.stdout)
-        spec = importlib.util.spec_from_file_location("agent_session_store_v3", old_path)
+        spec = importlib.util.spec_from_file_location("agent_session_store_v3", ROOT / "tests" / "fixtures" / "agent_session_store_v3.py")
         assert spec is not None
         old = importlib.util.module_from_spec(spec)
         assert spec.loader is not None
@@ -607,7 +583,7 @@ class SessionStoreTests(unittest.TestCase):
         token = "ghp_1234567890abcdefghijklmnop"
         self.transcript("cli", records=[message("needle Authorization: Bearer " + token)])
         result = subprocess.run(
-            [sys.executable, "-I", str(CLI_PATH), "search", "needle", "--state-dir", str(self.state), "--root", str(self.transcripts)],
+            [*CLI, "search", "needle", "--state-dir", str(self.state), "--root", str(self.transcripts)],
             cwd=self.project,
             check=True,
             stdout=subprocess.PIPE,
@@ -624,7 +600,7 @@ class SessionStoreTests(unittest.TestCase):
             self.assertEqual(len(matches), 1)
             position = store.search("needle", self.project_id)[0]["position"]
         shown = subprocess.run(
-            [sys.executable, "-I", str(CLI_PATH), "show", "cli", "--position", str(position), "--before", "0", "--after", "0", "--kind", "user", "--since", "2026-10-22", "--state-dir", str(self.state), "--root", str(self.transcripts), "--project", str(self.project)],
+            [*CLI, "show", "cli", "--position", str(position), "--before", "0", "--after", "0", "--kind", "user", "--since", "2026-10-22", "--state-dir", str(self.state), "--root", str(self.transcripts), "--project", str(self.project)],
             cwd=self.root,
             check=True,
             stdout=subprocess.PIPE,
@@ -633,7 +609,7 @@ class SessionStoreTests(unittest.TestCase):
         )
         self.assertIn("kind=user", shown.stdout)
         recent = subprocess.run(
-            [sys.executable, "-I", str(CLI_PATH), "recent", "--kind", "user", "--since", "2026-10-22", "--state-dir", str(self.state), "--root", str(self.transcripts), "--project", str(self.project)],
+            [*CLI, "recent", "--kind", "user", "--since", "2026-10-22", "--state-dir", str(self.state), "--root", str(self.transcripts), "--project", str(self.project)],
             cwd=self.root,
             check=True,
             stdout=subprocess.PIPE,
@@ -642,7 +618,7 @@ class SessionStoreTests(unittest.TestCase):
         )
         self.assertIn("sessions=1", recent.stdout)
         doctor = subprocess.run(
-            [sys.executable, "-I", str(CLI_PATH), "doctor", "--state-dir", str(self.state)],
+            [*CLI, "doctor", "--state-dir", str(self.state)],
             cwd=self.root,
             check=True,
             stdout=subprocess.PIPE,
@@ -1313,7 +1289,7 @@ class HarnessIndexTests(unittest.TestCase):
         self.claude("cli1", [{"type": "user", "message": {"role": "user", "content": "clineedle"}}])
         self.codex("cx", "clineedle")
         result = subprocess.run(
-            [sys.executable, str(CLI_PATH), "search", "clineedle", "--state-dir", str(self.state), "--project", str(self.project),
+            [*CLI, "search", "clineedle", "--state-dir", str(self.state), "--project", str(self.project),
              "--root", "claude=" + str(self.roots["claude"]), "--root", str(self.roots["codex"]), "--harness", "claude"],
             check=True, capture_output=True, text=True)
         self.assertIn("session=claude:cli1", result.stdout)

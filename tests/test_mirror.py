@@ -21,10 +21,12 @@ from pathlib import Path
 from typing import Any, cast
 from unittest import mock
 
-ROOT = Path(__file__).resolve().parents[2]
+ROOT = Path(__file__).resolve().parents[1]
 WORK_TMP = ROOT / ".work" / "tmp"
 WORK_TMP.mkdir(parents=True, exist_ok=True)
-sys.path.insert(0, str(ROOT / "agent-memory" / "src"))
+sys.path.insert(0, str(ROOT / "tests"))
+import testkit  # noqa: E402
+sys.path.insert(0, str(testkit.SRC))
 
 from agent_memory import archive as archive_module  # noqa: E402
 from agent_memory import experience as experience_module  # noqa: E402
@@ -35,9 +37,9 @@ from agent_memory import mirror_crypto  # noqa: E402
 from agent_memory import types as types_module  # noqa: E402
 from agent_memory.store import Store  # noqa: E402
 
-FIXTURE = json.loads((ROOT / "agent-memory" / "tests" / "fixtures" / "mirror_protocol.json").read_text())
+FIXTURE = json.loads((ROOT / "tests" / "fixtures" / "mirror_protocol.json").read_text())
 LEARNING_FIXTURE = json.loads(
-    (ROOT / "agent-memory" / "tests" / "fixtures" / "learning_records.json").read_text())
+    (ROOT / "tests" / "fixtures" / "learning_records.json").read_text())
 DIGEST = "a" * 64
 OTHER = "b" * 64
 CIPHER = "c" * 64
@@ -1577,7 +1579,7 @@ def ensure_age():
         return
     except mirror_crypto.CryptoError:
         result = subprocess.run(
-            ["sh", str(ROOT / "agent-memory" / "cloudflare" / "dev-age.sh")],
+            ["sh", str(ROOT / "cloudflare" / "dev-age.sh")],
             stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
         if result.returncode != 0:
             raise AssertionError("cannot build rage: " + result.stderr.strip()) from None
@@ -1631,10 +1633,10 @@ class MirrorIntegrationTests(unittest.TestCase):
         if node is None:
             raise AssertionError("node is required for mirror integration tests")
         cls.node: str = node
-        cls.worker_dir = ROOT / "agent-memory" / "cloudflare"
+        cls.worker_dir = ROOT / "cloudflare"
         cls.bundle = cls.worker_dir / ".cloudflare" / "output" / "v0" / "workers" / "default" / "bundle" / "index.js"
         if not cls.bundle.is_file():
-            raise AssertionError("missing worker bundle; run `npm run build` in agent-memory/cloudflare")
+            raise AssertionError("missing worker bundle; run `npm run build` in cloudflare/")
         ensure_age()
 
     def setUp(self):
@@ -2103,10 +2105,10 @@ class MirrorCliTests(unittest.TestCase):
         if node is None:
             raise AssertionError("node is required for mirror CLI tests")
         cls.node: str = node
-        cls.worker_dir = ROOT / "agent-memory" / "cloudflare"
+        cls.worker_dir = ROOT / "cloudflare"
         cls.bundle = cls.worker_dir / ".cloudflare" / "output" / "v0" / "workers" / "default" / "bundle" / "index.js"
         if not cls.bundle.is_file():
-            raise AssertionError("missing worker bundle; run `npm run build` in agent-memory/cloudflare")
+            raise AssertionError("missing worker bundle; run `npm run build` in cloudflare/")
         openssl = shutil.which("openssl")
         if openssl is None:
             raise AssertionError("openssl is required for the mirror CLI tests")
@@ -2152,14 +2154,14 @@ class MirrorCliTests(unittest.TestCase):
         self.env["SSL_CERT_FILE"] = str(self.tls_cert)
         self.empty_root = self.root / "empty"
         self.empty_root.mkdir()
-        self.cli = ROOT / "dotfiles" / "base" / ".local" / "bin" / "agent-sessions"
+        self.cli = testkit.command("agent-sessions")
 
     def tearDown(self):
         self.temporary.cleanup()
 
     def run_cli(self, *arguments):
         return subprocess.run(
-            [sys.executable, "-I", str(self.cli), *arguments],
+            [*self.cli, *arguments],
             cwd=str(self.root), env=self.env, text=True,
             stdout=subprocess.PIPE, stderr=subprocess.PIPE)
 
@@ -2409,25 +2411,6 @@ class MirrorCliTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(json.loads(result.stdout.strip()), {"overlapped": True, "pending": "skipped"})
 
-    def test_launch_agent_template_lints(self):
-        plutil = shutil.which("plutil")
-        if plutil is None:
-            self.skipTest("plutil is required for the LaunchAgent lint")
-        template = (ROOT / "dotfiles" / "launchd" / "com.josh.agent-sessions-mirror.plist.in").read_text()
-        rendered = (template
-                    .replace("@@HOME@@", str(self.home))
-                    .replace("@@STATE_DIR@@", str(self.state))
-                    .replace("@@REMOTE@@", "cloudflare"))
-        path = self.root / "com.josh.agent-sessions-mirror.plist"
-        path.write_text(rendered)
-        linted = subprocess.run(
-            [plutil, "-lint", str(path)], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
-        self.assertEqual(linted.returncode, 0, linted.stderr)
-        self.assertIn("OK", linted.stdout)
-        self.assertIn("<string>mirror</string>", rendered)
-        self.assertIn("<string>sync</string>", rendered)
-        self.assertIn("<integer>3600</integer>", rendered)
-
 
 class MemoryGateTests(unittest.TestCase):
     @classmethod
@@ -2436,10 +2419,10 @@ class MemoryGateTests(unittest.TestCase):
         node = shutil.which("node")
         if node is None:
             raise AssertionError("node is required for the mirror memory gate")
-        worker_dir = ROOT / "agent-memory" / "cloudflare"
+        worker_dir = ROOT / "cloudflare"
         bundle = worker_dir / ".cloudflare" / "output" / "v0" / "workers" / "default" / "bundle" / "index.js"
         if not bundle.is_file():
-            raise AssertionError("missing worker bundle; run `npm run build` in agent-memory/cloudflare")
+            raise AssertionError("missing worker bundle; run `npm run build` in cloudflare/")
         cls.process, cls.port = start_integration_server(
             node, worker_dir, [{"client_id": "collector-client.access", "origin": "origin-a"}])
 
@@ -2465,7 +2448,7 @@ class MemoryGateTests(unittest.TestCase):
 
     def test_an_eight_mebibyte_artifact_and_a_mebibyte_chunk_stay_bounded(self):
         settings = {
-            "root": str(ROOT), "url": "http://127.0.0.1:%d" % self.port,
+            "src": str(testkit.SRC), "url": "http://127.0.0.1:%d" % self.port,
             "token": str(self.token), "identity": str(self.identity),
             "recipients": str(self.recipients), "archive": str(self.archive),
         }
@@ -2483,7 +2466,7 @@ import sys
 from pathlib import Path
 
 settings = json.loads(os.environ["MEMORY_GATE"])
-sys.path.insert(0, str(Path(settings["root"]) / "agent-memory" / "src"))
+sys.path.insert(0, settings["src"])
 from agent_memory import mirror, mirror_crypto
 port = int(settings["url"].rsplit(":", 1)[1])
 
@@ -2560,10 +2543,10 @@ class LoadRunTests(unittest.TestCase):
         node = shutil.which("node")
         if node is None:
             raise AssertionError("node is required for the mirror load run")
-        cls.worker_dir = ROOT / "agent-memory" / "cloudflare"
+        cls.worker_dir = ROOT / "cloudflare"
         bundle = cls.worker_dir / ".cloudflare" / "output" / "v0" / "workers" / "default" / "bundle" / "index.js"
         if not bundle.is_file():
-            raise AssertionError("missing worker bundle; run `npm run build` in agent-memory/cloudflare")
+            raise AssertionError("missing worker bundle; run `npm run build` in cloudflare/")
         collectors = [{"client_id": "load-%d.access" % index, "origin": "load-%d" % index}
                       for index in range(cls.COLLECTORS)]
         cls.process, cls.port = start_integration_server(

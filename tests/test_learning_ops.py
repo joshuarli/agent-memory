@@ -9,13 +9,15 @@ from pathlib import Path
 from unittest.mock import patch
 
 
-REPOSITORY = Path(__file__).resolve().parents[2]
-SRC = REPOSITORY / "agent-memory" / "src"
+ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / "tests"))
+import testkit  # noqa: E402
+SRC = testkit.SRC
 sys.path.insert(0, str(SRC))
 from agent_memory import learning_ops as OPS  # noqa: E402
 from agent_memory import store as STORE  # noqa: E402
 
-SCRATCH_ROOT = REPOSITORY / ".work/tmp"
+SCRATCH_ROOT = ROOT / ".work/tmp"
 SCRATCH_ROOT.mkdir(parents=True, exist_ok=True)
 
 
@@ -198,7 +200,7 @@ class AgentLearningOpsTests(unittest.TestCase):
         calls, runner = self.launchctl_runner([1, 0])
 
         with patch.object(OPS.sys, "platform", "darwin"):
-            plist_path = OPS.install_scheduler(REPOSITORY, state_dir, home, runner)
+            plist_path = OPS.install_scheduler(testkit.USR_TARGET, state_dir, home, runner)
 
         with plist_path.open("rb") as stream:
             plist = plistlib.load(stream)
@@ -229,7 +231,7 @@ class AgentLearningOpsTests(unittest.TestCase):
 
         with patch.object(OPS.sys, "platform", "darwin"):
             with self.assertRaises(OSError):
-                OPS.install_scheduler(REPOSITORY, state_dir, home, runner)
+                OPS.install_scheduler(testkit.USR_TARGET, state_dir, home, runner)
 
         self.assertEqual(calls, [])
         self.assertEqual(list(external.iterdir()), [])
@@ -247,7 +249,7 @@ class AgentLearningOpsTests(unittest.TestCase):
 
         with patch.object(OPS.sys, "platform", "darwin"):
             with self.assertRaises(FileExistsError):
-                OPS.install_scheduler(REPOSITORY, state_dir, home, runner)
+                OPS.install_scheduler(testkit.USR_TARGET, state_dir, home, runner)
 
         self.assertEqual(plist_path.read_bytes(), original)
         self.assertEqual(calls, [])
@@ -277,7 +279,7 @@ class AgentLearningOpsTests(unittest.TestCase):
         with patch.object(OPS.sys, "platform", "linux"):
             status = OPS.scheduler_status(home, runner)
             with self.assertRaises(OPS.SchedulerError):
-                OPS.install_scheduler(REPOSITORY, state_dir, home, runner)
+                OPS.install_scheduler(testkit.USR_TARGET, state_dir, home, runner)
 
         self.assertEqual(status, OPS.SchedulerStatus(False, False, None))
         self.assertEqual(calls, [])

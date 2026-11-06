@@ -1,0 +1,335 @@
+{
+ "now": "2026-10-20T12:00:00Z",
+ "projects": {
+  "lexc": {
+   "files": {
+    "Cargo.toml": "[package]\nname = \"lexc\"\nversion = \"0.2.0\"\nedition = \"2021\"\n\n[dev-dependencies]\ninsta = \"1.39\"\n",
+    "src/lexer.rs": "pub struct Span { pub start: u32, pub end: u32 }\n",
+    "src/parser.rs": "pub fn parse() {}\n",
+    "src/vm.rs": "pub fn exec() {}\n",
+    "src/fmt.rs": "pub fn pretty() {}\n",
+    "tests/snapshots.rs": "#[test]\nfn parse_examples() { insta::assert_snapshot!(\"x\"); }\n",
+    "README.md": "Front-end and bytecode VM for the lex language.\n"
+   }
+  }
+ },
+ "episodes": [
+  {
+   "id": "lx-vm-stack",
+   "project": "lexc",
+   "harness": "claude",
+   "age_days": 33,
+   "turns": [
+    {
+     "user": "The match guard example panics in the VM."
+    },
+    {
+     "tool": {
+      "cmd": "cargo run -- examples/guard.lex",
+      "output": "thread 'main' panicked at 'stack underflow in vm::exec', src/vm.rs:211:9\nnote: run with `RUST_BACKTRACE=1` environment variable to display a backtrace",
+      "exit": 101
+     }
+    },
+    {
+     "tool": {
+      "cmd": "cargo run -- --dump-bytecode examples/guard.lex | sed -n '10,24p'",
+      "output": "10: LOAD_LOCAL 0\n11: PUSH_INT 3\n12: GT\n13: JMP_IF_FALSE 19\n14: POP\n15: POP\n16: LOAD_LOCAL 1",
+      "exit": 0
+     }
+    },
+    {
+     "assistant": "Codegen for a match arm with a guard emits POP for the scrutinee twice: once in the guard failure path and once after the arm body. Removing the duplicate in codegen::emit_arm."
+    },
+    {
+     "tool": {
+      "cmd": "cargo test vm_match_guard",
+      "output": "running 1 test\ntest vm::tests::vm_match_guard ... ok\ntest result: ok. 1 passed; 0 failed",
+      "exit": 0
+     }
+    }
+   ]
+  },
+  {
+   "id": "lx-snapshot",
+   "project": "lexc",
+   "harness": "codex",
+   "age_days": 41,
+   "turns": [
+    {
+     "user": "Parser snapshot tests fail after I changed how spans are printed in diagnostics."
+    },
+    {
+     "tool": {
+      "cmd": "cargo test --test snapshots",
+      "output": "---- parse_examples stdout ----\nSnapshot Summary\n-old snapshot\n+new results\n  -  --> 3:7\n  +  --> 3:7-3:12\nstored new snapshot tests/snapshots/snapshots__parse_examples.snap.new\ntest result: FAILED. 0 passed; 1 failed",
+      "exit": 101
+     }
+    },
+    {
+     "assistant": "Just running cargo insta accept to take all the new snapshots."
+    },
+    {
+     "user": "No, never accept wholesale. Use cargo insta review and look at each diff, the span change should only touch the diagnostics snapshots. Last time a bulk accept hid a real regression in the AST dump."
+    },
+    {
+     "tool": {
+      "cmd": "cargo insta review",
+      "output": "tests/snapshots/snapshots__diag_unterminated.snap: accepted\ntests/snapshots/snapshots__parse_examples.snap: rejected (ast dump changed unexpectedly)\n",
+      "exit": 0
+     }
+    }
+   ]
+  },
+  {
+   "id": "lx-packrat",
+   "project": "lexc",
+   "harness": "grok",
+   "age_days": 95,
+   "turns": [
+    {
+     "user": "Add packrat memoization so left-recursive expression rules work."
+    },
+    {
+     "tool": {
+      "cmd": "cargo bench --bench parse_big && /usr/bin/time -l target/release/lexc big/2mb.lex 2>&1 | grep 'maximum resident'",
+      "output": "parse_big/memo        time: [212.4 ms 214.0 ms 215.9 ms]\n parse_big/pratt       time: [96.3 ms 96.9 ms 97.6 ms]\n   410238976  maximum resident set size",
+      "exit": 0
+     }
+    },
+    {
+     "assistant": "Memoizing every rule on a 2 MB input doubles memory (180 MB with the Pratt parser vs 410 MB) and is 2.2 times slower. Left recursion is only needed for binary operators, which the Pratt loop already handles."
+    },
+    {
+     "user": "Abandon packrat. Keep Pratt for operators."
+    }
+   ]
+  },
+  {
+   "id": "lx-spans",
+   "project": "lexc",
+   "harness": "codex",
+   "age_days": 160,
+   "turns": [
+    {
+     "user": "LSP diagnostics are off by a few columns on lines with unicode. How do spans work here?"
+    },
+    {
+     "tool": {
+      "cmd": "rg -n 'struct Span|line_index|utf16' src/ lsp/",
+      "output": "src/lexer.rs:3:pub struct Span { pub start: u32, pub end: u32 }\nlsp/convert.rs:18:fn to_lsp_position(line_index: &LineIndex, off: u32) -> Position { /* utf16 */ }",
+      "exit": 0
+     }
+    },
+    {
+     "assistant": "Spans are u32 byte offsets into the source, not char or column indexes, and files over 4 GiB are unsupported. The lexer never computes columns; LSP conversion goes through LineIndex and counts UTF-16 units. Any column displayed elsewhere must use the same helper."
+    },
+    {
+     "user": "Good. Use LineIndex everywhere, never count chars in the lexer."
+    }
+   ]
+  },
+  {
+   "id": "lx-bump-insta",
+   "project": "lexc",
+   "harness": "claude",
+   "age_days": 5,
+   "turns": [
+    {
+     "user": "Bump insta to 1.40."
+    },
+    {
+     "tool": {
+      "cmd": "cargo update -p insta && cargo test --test snapshots",
+      "output": "    Updating insta v1.39.0 -> v1.40.0\ntest parse_examples ... ok\ntest result: ok. 1 passed",
+      "exit": 0
+     }
+    },
+    {
+     "assistant": "Done. Nothing else needs changing."
+    }
+   ]
+  },
+  {
+   "id": "lx-escape-test",
+   "project": "lexc",
+   "harness": "grok",
+   "age_days": 30,
+   "turns": [
+    {
+     "user": "Add a lexer test for the \\u{...} escape."
+    },
+    {
+     "tool": {
+      "cmd": "cargo test lexer::escape",
+      "output": "test lexer::tests::escape_unicode ... ok\ntest result: ok. 1 passed",
+      "exit": 0
+     }
+    },
+    {
+     "assistant": "Added escape_unicode in src/lexer.rs."
+    }
+   ]
+  }
+ ],
+ "memories": [
+  {
+   "id": "m-lx-insta",
+   "project": "lexc",
+   "age_days": 40,
+   "action": "Review snapshot changes with cargo insta review; do not bulk accept. A bulk accept once hid a regression in the AST dump.",
+   "applicability": "Snapshot tests fail after changing printing or diagnostics output.",
+   "sources": [
+    {
+     "episode": "lx-snapshot",
+     "contains": "never accept wholesale"
+    }
+   ],
+   "validity": [
+    {
+     "path": "Cargo.toml",
+     "contains": "insta"
+    }
+   ]
+  }
+ ],
+ "mutations": [
+  {
+   "project": "lexc",
+   "path": "src/fmt.rs",
+   "content": "pub fn pretty() {}\npub fn compact() {}\n",
+   "commit": true
+  }
+ ],
+ "cases": [
+  {
+   "id": "lx-short-vm",
+   "split": "heldout",
+   "category": "short_identifier",
+   "project": "lexc",
+   "query": "VM",
+   "expect": "match",
+   "relevant": [
+    "lx-vm-stack"
+   ]
+  },
+  {
+   "id": "lx-exact-underflow",
+   "split": "heldout",
+   "category": "exact_identifier",
+   "project": "lexc",
+   "query": "stack underflow in vm::exec",
+   "expect": "match",
+   "relevant": [
+    "lx-vm-stack"
+   ]
+  },
+  {
+   "id": "lx-para-golden",
+   "split": "heldout",
+   "category": "paraphrase",
+   "project": "lexc",
+   "query": "golden outputs differ after reformatting diagnostics, bulk-approve them?",
+   "expect": "match",
+   "relevant": [
+    "lx-snapshot"
+   ],
+   "valid_memories": [
+    "m-lx-insta"
+   ],
+   "misleading": [
+    "lx-bump-insta"
+   ]
+  },
+  {
+   "id": "lx-path-insta",
+   "split": "heldout",
+   "category": "path_symbol_command",
+   "project": "lexc",
+   "query": "cargo insta review",
+   "expect": "match",
+   "relevant": [
+    "lx-snapshot"
+   ],
+   "misleading": [
+    "lx-bump-insta"
+   ]
+  },
+  {
+   "id": "lx-traj-packrat",
+   "split": "heldout",
+   "category": "trajectory",
+   "project": "lexc",
+   "query": "memoize the parser to support left recursion",
+   "expect": "match",
+   "relevant": [
+    "lx-packrat"
+   ]
+  },
+  {
+   "id": "lx-nonobv-spans",
+   "split": "heldout",
+   "category": "nonobvious_success",
+   "project": "lexc",
+   "query": "editor squiggles are shifted on lines with emoji, how are positions represented",
+   "expect": "match",
+   "relevant": [
+    "lx-spans"
+   ]
+  },
+  {
+   "id": "lx-valid-insta",
+   "split": "heldout",
+   "category": "valid_after_unrelated_commit",
+   "project": "lexc",
+   "query": "insta snapshot accept policy",
+   "expect": "match",
+   "relevant": [
+    "lx-snapshot"
+   ],
+   "valid_memories": [
+    "m-lx-insta"
+   ]
+  },
+  {
+   "id": "lx-prov-insta",
+   "split": "heldout",
+   "category": "provenance",
+   "project": "lexc",
+   "query": "where does the rule against cargo insta accept come from",
+   "expect": "match",
+   "relevant": [
+    "lx-snapshot"
+   ],
+   "valid_memories": [
+    "m-lx-insta"
+   ]
+  },
+  {
+   "id": "lx-neg-generics",
+   "split": "heldout",
+   "category": "negative",
+   "project": "lexc",
+   "query": "add generic type parameters to the type checker",
+   "expect": "abstain"
+  },
+  {
+   "id": "lx-neg-dispatch",
+   "split": "heldout",
+   "category": "negative",
+   "project": "lexc",
+   "query": "add inline caching to the VM dispatch loop",
+   "expect": "abstain"
+  },
+  {
+   "id": "lx-para-guard",
+   "category": "paraphrase",
+   "project": "lexc",
+   "query": "interpreter crashes with an empty operand stack on a conditional arm with a predicate",
+   "expect": "match",
+   "relevant": [
+    "lx-vm-stack"
+   ],
+   "split": "heldout"
+  }
+ ]
+}

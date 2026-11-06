@@ -1,0 +1,495 @@
+{
+ "now": "2026-10-20T12:00:00Z",
+ "episodes": [],
+ "memories": [],
+ "mutations": [],
+ "cases": [
+  {
+   "id": "x-dup1",
+   "split": "dev",
+   "category": "duplicate",
+   "project": "harbor",
+   "query": "renovate keeps bumping nanoid and the test suite breaks",
+   "expect": "match",
+   "relevant": [
+    "hb-001",
+    "hb-010",
+    "hb-011"
+   ],
+   "valid_memories": [
+    "m-hb-nanoid"
+   ]
+  },
+  {
+   "id": "x-dup2",
+   "split": "dev",
+   "category": "duplicate",
+   "project": "sundial",
+   "query": "scheduled run complains about double bracket test operator",
+   "expect": "match",
+   "relevant": [
+    "sd-001",
+    "sd-009"
+   ],
+   "stale_memories": [
+    "m-sd-dash"
+   ]
+  },
+  {
+   "id": "x-con1",
+   "split": "dev",
+   "category": "contradiction",
+   "project": "quarry",
+   "query": "set GOGC=400 for lower latency",
+   "expect": "match",
+   "relevant": [
+    "qr-002"
+   ],
+   "misleading": [
+    "qr-010"
+   ],
+   "stale_memories": [
+    "m-qr-gc"
+   ]
+  },
+  {
+   "id": "x-con2",
+   "split": "dev",
+   "category": "contradiction",
+   "project": "vellum",
+   "query": "use remark-parse 10 everywhere",
+   "expect": "match",
+   "relevant": [
+    "vl-001"
+   ],
+   "misleading": [
+    "vl-008"
+   ],
+   "valid_memories": [
+    "m-vl-remark"
+   ]
+  },
+  {
+   "id": "x-sim1",
+   "split": "dev",
+   "category": "similar_project",
+   "project": "orbit-export",
+   "query": "fresh clone, orbit_core cannot be imported on the runner",
+   "expect": "match",
+   "relevant": [
+    "oe-001"
+   ],
+   "stale_memories": [
+    "m-oe-pythonpath"
+   ],
+   "misleading": [
+    "oi-001"
+   ],
+   "forbidden": [
+    "oi-001"
+   ]
+  },
+  {
+   "id": "x-sim2",
+   "split": "dev",
+   "category": "similar_project",
+   "project": "frobd",
+   "query": "linking fails with a missing thread symbol on glibc 2.31",
+   "expect": "match",
+   "relevant": [
+    "fd-001"
+   ],
+   "misleading": [
+    "lf-001"
+   ],
+   "forbidden": [
+    "lf-001"
+   ]
+  },
+  {
+   "id": "x-sim3",
+   "split": "dev",
+   "category": "similar_project",
+   "project": "libfrob",
+   "query": "libfrob.so undefined reference thread create, passes on other distro",
+   "expect": "match",
+   "relevant": [
+    "lf-001"
+   ],
+   "stale_memories": [
+    "m-lf-linkorder"
+   ],
+   "misleading": [
+    "fd-001"
+   ],
+   "forbidden": [
+    "fd-001"
+   ]
+  },
+  {
+   "id": "x-sh1",
+   "split": "dev",
+   "category": "short_identifier",
+   "project": "harbor",
+   "query": "ESM",
+   "expect": "match",
+   "relevant": [
+    "hb-001",
+    "hb-010",
+    "hb-011"
+   ],
+   "valid_memories": [
+    "m-hb-nanoid"
+   ],
+   "misleading": [
+    "hb-012"
+   ],
+   "forbidden": [
+    "vl-001"
+   ]
+  },
+  {
+   "id": "x-sh2",
+   "split": "dev",
+   "category": "short_identifier",
+   "project": "vellum",
+   "query": "ESM",
+   "expect": "match",
+   "relevant": [
+    "vl-001"
+   ],
+   "valid_memories": [
+    "m-vl-remark"
+   ],
+   "misleading": [
+    "vl-008"
+   ],
+   "forbidden": [
+    "hb-001"
+   ]
+  },
+  {
+   "id": "x-sh3",
+   "split": "dev",
+   "category": "short_identifier",
+   "project": "tidepool",
+   "query": "OOM",
+   "expect": "match",
+   "relevant": [
+    "tp-001"
+   ],
+   "valid_memories": [
+    "m-tp-shards"
+   ],
+   "forbidden": [
+    "qr-002"
+   ]
+  },
+  {
+   "id": "x-sh4",
+   "split": "dev",
+   "category": "short_identifier",
+   "project": "orbit-export",
+   "query": "CI",
+   "expect": "match",
+   "relevant": [
+    "oe-001"
+   ],
+   "stale_memories": [
+    "m-oe-pythonpath"
+   ],
+   "misleading": [
+    "oi-001"
+   ],
+   "forbidden": [
+    "oi-001"
+   ]
+  },
+  {
+   "id": "x-mr1",
+   "split": "dev",
+   "category": "multi_record",
+   "project": "tidepool",
+   "query": "run the tidepool cache suite safely in CI containers and with the flusher thread",
+   "expect": "match",
+   "required": [
+    [
+     "tp-001"
+    ],
+    [
+     "tp-005"
+    ]
+   ],
+   "valid_memories": [
+    "m-tp-shards"
+   ],
+   "relevant": [
+    "tp-001",
+    "tp-005"
+   ]
+  },
+  {
+   "id": "x-mr2",
+   "split": "dev",
+   "category": "multi_record",
+   "project": "lantern",
+   "query": "new lantern dev setup: tokio features and latency tuning",
+   "expect": "match",
+   "required": [
+    [
+     "ln-003",
+     "ln-006",
+     "ln-007"
+    ],
+    [
+     "ln-002"
+    ]
+   ],
+   "valid_memories": [
+    "m-ln-features"
+   ],
+   "relevant": [
+    "ln-003",
+    "ln-006",
+    "ln-007",
+    "ln-002"
+   ]
+  },
+  {
+   "id": "x-p1",
+   "split": "dev",
+   "category": "path_symbol_command",
+   "project": "tidepool",
+   "query": "src/cache.py ShardCache.evict",
+   "expect": "match",
+   "relevant": [
+    "tp-005"
+   ],
+   "valid_memories": [
+    "m-tp-evict"
+   ]
+  },
+  {
+   "id": "x-p2",
+   "split": "dev",
+   "category": "path_symbol_command",
+   "project": "quarry",
+   "query": "deploy/quarry.service GOMEMLIMIT",
+   "expect": "match",
+   "relevant": [
+    "qr-002"
+   ],
+   "stale_memories": [
+    "m-qr-gc"
+   ]
+  },
+  {
+   "id": "x-p3",
+   "split": "dev",
+   "category": "path_symbol_command",
+   "project": "lantern",
+   "query": "cargo bench --bench handler",
+   "expect": "match",
+   "relevant": [
+    "ln-002"
+   ]
+  },
+  {
+   "id": "x-p4",
+   "split": "dev",
+   "category": "path_symbol_command",
+   "project": "sundial",
+   "query": "lib/rotate.sh mountpoint",
+   "expect": "match",
+   "relevant": [
+    "sd-003"
+   ]
+  },
+  {
+   "id": "x-pa1",
+   "split": "dev",
+   "category": "paraphrase",
+   "project": "tidepool",
+   "query": "nightly job dies only on the big runners where the hardware thread count is huge",
+   "expect": "match",
+   "relevant": [
+    "tp-001"
+   ],
+   "valid_memories": [
+    "m-tp-shards"
+   ]
+  },
+  {
+   "id": "x-pa2",
+   "split": "dev",
+   "category": "paraphrase",
+   "project": "ledger",
+   "query": "customer invoice total disagrees with their statement by a penny",
+   "expect": "match",
+   "relevant": [
+    "lg-001"
+   ],
+   "misleading": [
+    "lg-006"
+   ],
+   "stale_memories": [
+    "m-lg-cents"
+   ]
+  },
+  {
+   "id": "x-pa3",
+   "split": "dev",
+   "category": "paraphrase",
+   "project": "orbit-ingest",
+   "query": "why can't I just push everything in one request",
+   "expect": "match",
+   "relevant": [
+    "oi-002"
+   ],
+   "valid_memories": [
+    "m-oi-batch"
+   ]
+  },
+  {
+   "id": "x-pa4",
+   "split": "dev",
+   "category": "paraphrase",
+   "project": "orbit-export",
+   "query": "date columns went weird, tempted to freeze the dataframe library at an old version",
+   "expect": "match",
+   "relevant": [
+    "oe-003"
+   ],
+   "misleading": [
+    "oe-006"
+   ]
+  },
+  {
+   "id": "x-pa5",
+   "split": "dev",
+   "category": "paraphrase",
+   "project": "libfrob",
+   "query": "can the options struct grow a new member where it logically belongs",
+   "expect": "match",
+   "relevant": [
+    "lf-005"
+   ]
+  },
+  {
+   "id": "x-pa6",
+   "split": "dev",
+   "category": "paraphrase",
+   "project": "frobd",
+   "query": "can the daemon wait with sub-millisecond precision",
+   "expect": "match",
+   "relevant": [
+    "fd-002"
+   ],
+   "stale_memories": [
+    "m-fd-epoll"
+   ]
+  },
+  {
+   "id": "x-pa7",
+   "split": "dev",
+   "category": "paraphrase",
+   "project": "harbor",
+   "query": "the production bundle takes ages to compile, where is the time going",
+   "expect": "match",
+   "relevant": [
+    "hb-003"
+   ]
+  },
+  {
+   "id": "x-pa8",
+   "split": "dev",
+   "category": "paraphrase",
+   "project": "harbor",
+   "query": "unit tests choke on a library that stopped shipping the old module format",
+   "expect": "match",
+   "relevant": [
+    "hb-001",
+    "hb-010",
+    "hb-011"
+   ],
+   "valid_memories": [
+    "m-hb-nanoid"
+   ]
+  },
+  {
+   "id": "x-pa9",
+   "split": "dev",
+   "category": "paraphrase",
+   "project": "quarry",
+   "query": "can we skip loading the segment into RAM and let the OS page it lazily",
+   "expect": "match",
+   "relevant": [
+    "qr-003"
+   ]
+  },
+  {
+   "id": "x-pa10",
+   "split": "dev",
+   "category": "paraphrase",
+   "project": "sundial",
+   "query": "the cleanup job emptied the target after the share failed to attach",
+   "expect": "match",
+   "relevant": [
+    "sd-003"
+   ]
+  },
+  {
+   "id": "x-pa11",
+   "split": "dev",
+   "category": "paraphrase",
+   "project": "lantern",
+   "query": "service dies on launch complaining about nesting executors",
+   "expect": "match",
+   "relevant": [
+    "ln-001"
+   ],
+   "misleading": [
+    "ln-009"
+   ]
+  },
+  {
+   "id": "x-pa12",
+   "split": "dev",
+   "category": "paraphrase",
+   "project": "vellum",
+   "query": "support for the oldest LTS runtime was removed, what was the reason",
+   "expect": "match",
+   "relevant": [
+    "vl-002"
+   ]
+  },
+  {
+   "id": "x-pa13",
+   "split": "dev",
+   "category": "paraphrase",
+   "project": "mosaic",
+   "query": "container image build cannot compile the raster library",
+   "expect": "match",
+   "relevant": [
+    "ms-011"
+   ]
+  },
+  {
+   "id": "x-pa14",
+   "split": "dev",
+   "category": "paraphrase",
+   "project": "mosaic",
+   "query": "model field validation keyword stopped working after the major upgrade",
+   "expect": "match",
+   "relevant": [
+    "ms-001"
+   ],
+   "valid_memories": [
+    "m-ms-pattern"
+   ],
+   "misleading": [
+    "ms-006"
+   ]
+  }
+ ]
+}

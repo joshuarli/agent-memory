@@ -2,6 +2,7 @@
 
 import argparse
 import json
+import os
 import re
 import shutil
 import subprocess
@@ -12,9 +13,11 @@ from pathlib import Path
 from typing import Any
 
 
-REPOSITORY = Path(__file__).resolve().parents[2]
-SRC = REPOSITORY / "agent-memory/src"
-sys.path.insert(0, str(SRC))
+REPOSITORY = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(REPOSITORY / "tests"))
+import testkit  # noqa: E402
+USR_ROOT = Path(os.environ.get("AGENT_MEMORY_USR_ROOT") or Path.home() / "usr")
+sys.path.insert(0, str(testkit.SRC))
 
 from agent_memory import learning as agent_learning  # noqa: E402
 from agent_memory import learning_review as REVIEW  # noqa: E402
@@ -118,10 +121,8 @@ def _write_usr_repository(root):
         (skills / name).mkdir(parents=True)
         (skills / name / "SKILL.md").write_text(text, encoding="utf-8")
     (skills / "orchestrate").mkdir()
-    shutil.copyfile(REPOSITORY / "dotfiles/base/.agents/skills/orchestrate/SKILL.md", skills / "orchestrate/SKILL.md")
-    shutil.copyfile(REPOSITORY / "dotfiles/skills-check.sh", root / "dotfiles/skills-check.sh")
-    (root / "dotfiles/base/.local/bin").mkdir(parents=True, exist_ok=True)
-    shutil.copyfile(REPOSITORY / "tools/mdtool/src/mdtool.py", root / "dotfiles/base/.local/bin/mdtool")
+    shutil.copyfile(testkit.USR_TARGET / "dotfiles/base/.agents/skills/orchestrate/SKILL.md", skills / "orchestrate/SKILL.md")
+    testkit.install_checker(root)
     _git(root, "add", ".")
     _git(root, "commit", "-q", "-m", "chore(live): create synthetic methodology")
 
@@ -203,7 +204,7 @@ def _debug_catalog(codex, repo, env, description):
         serialized = json.dumps(json.loads(result.stdout), ensure_ascii=False)
     except (UnicodeDecodeError, json.JSONDecodeError):
         return {"status": "unverified", "skill_visible": False, "skill_body_visible": False, "project_catalog_isolated": False}
-    isolated = str(REPOSITORY / ".agents" / "skills") not in serialized
+    isolated = str(USR_ROOT / ".agents" / "skills") not in serialized
     return {
         "status": "verified" if isolated else "unexpected_ambient_catalog",
         "skill_visible": SKILL_NAME in serialized and description in serialized,
@@ -419,7 +420,7 @@ def _held_out(scratch, reviewer, treated_skill) -> dict[str, Any]:
 
 def _live():
     TMP_ROOT.mkdir(parents=True, exist_ok=True)
-    reviewer = REVIEW.CodexReviewer(REPOSITORY, TMP_ROOT)
+    reviewer = REVIEW.CodexReviewer(USR_ROOT, TMP_ROOT)
     capabilities = reviewer.capabilities()
     if capabilities.get("status") != "ok":
         return {"status": "unavailable", "reason": capabilities.get("reason", "codex_unavailable")}

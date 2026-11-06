@@ -1,0 +1,468 @@
+{
+ "now": "2026-10-20T12:00:00Z",
+ "projects": {
+  "lantern": {
+   "files": {
+    "Cargo.toml": "[package]\nname = \"lantern\"\nversion = \"0.3.0\"\n\n[dependencies]\ntokio = { version = \"1.38\", default-features = false, features = [\"rt-multi-thread\", \"net\", \"macros\"] }\ntracing-appender = \"0.2\"\n",
+    "src/main.rs": "use tokio::net::TcpListener;\n\n#[tokio::main]\nasync fn main() {\n    let _ = TcpListener::bind(\"0.0.0.0:7000\").await;\n}\n",
+    "src/io.rs": "pub async fn read(path: &str) -> std::io::Result<String> {\n    tokio::fs::read_to_string(path).await\n}\n"
+   }
+  }
+ },
+ "episodes": [
+  {
+   "id": "ln-001",
+   "project": "lantern",
+   "harness": "codex",
+   "age_days": 38,
+   "turns": [
+    {
+     "user": "lantern panics at startup after I moved config loading into a helper"
+    },
+    {
+     "tool": {
+      "cmd": "cargo run",
+      "output": "    Finished dev [unoptimized + debuginfo] target(s) in 0.09s\nthread 'main' panicked at 'Cannot start a runtime from within a runtime. This happens because a function (like `block_on`) attempted to block the current thread while the thread is being used to drive asynchronous tasks.', src/config.rs:22:9\nnote: run with `RUST_BACKTRACE=1` environment variable to display a backtrace",
+      "exit": 101
+     }
+    },
+    {
+     "assistant": "load_config calls Handle::block_on from inside #[tokio::main]. Make it async and await it; use spawn_blocking only for genuinely blocking work."
+    },
+    {
+     "tool": {
+      "cmd": "cargo run -- --check",
+      "output": "config ok",
+      "exit": 0
+     }
+    }
+   ]
+  },
+  {
+   "id": "ln-002",
+   "project": "lantern",
+   "harness": "claude",
+   "age_days": 77,
+   "turns": [
+    {
+     "user": "p95 latency spikes under load, I think the file reads in io.rs block the executor"
+    },
+    {
+     "tool": {
+      "cmd": "cargo bench --bench handler",
+      "output": "fs_std       time:   [1.82 ms 1.84 ms 1.87 ms]\nfs_tokio     time:   [1.85 ms 1.87 ms 1.90 ms]",
+      "exit": 0
+     }
+    },
+    {
+     "assistant": "tokio::fs is spawn_blocking underneath so it buys nothing. The stalls are in println! logging: stdout on a piped service takes the global lock and parks the worker thread when the pipe is full."
+    },
+    {
+     "tool": {
+      "cmd": "strace -f -T -e trace=write -p $(pidof lantern) 2>&1 | head -2",
+      "output": "[pid 4112] write(1, \"req handled\\n\", 12) = 12 <0.412331>\n[pid 4113] write(1, \"req handled\\n\", 12) = 12 <0.397810>",
+      "exit": 0
+     }
+    },
+    {
+     "user": "switch logging to tracing-appender non_blocking"
+    },
+    {
+     "tool": {
+      "cmd": "cargo bench --bench handler",
+      "output": "handler_p95  time:   [0.58 ms 0.61 ms 0.64 ms]",
+      "exit": 0
+     }
+    }
+   ],
+   "native_id": "sess-0042"
+  },
+  {
+   "id": "ln-003",
+   "project": "lantern",
+   "harness": "grok",
+   "age_days": 14,
+   "turns": [
+    {
+     "user": "cargo build fails after I trimmed the tokio features"
+    },
+    {
+     "tool": {
+      "cmd": "cargo build",
+      "output": "error[E0432]: unresolved import `tokio::net::TcpListener`\n --> src/main.rs:3:5\n  |\n3 | use tokio::net::TcpListener;\n  |     ^^^^^^^^^^^^^^^^^^^^^^^ no `TcpListener` in `net`\n  |\nnote: found an item that was configured out\n  = note: the item is gated behind the `net` feature\nerror: could not compile `lantern` due to previous error",
+      "exit": 101
+     }
+    },
+    {
+     "assistant": "With default-features = false the net module is not compiled in. Added the net feature."
+    },
+    {
+     "tool": {
+      "cmd": "cargo build",
+      "output": "   Compiling lantern v0.3.0\n    Finished dev [unoptimized + debuginfo] target(s) in 6.80s",
+      "exit": 0
+     }
+    }
+   ],
+   "dup_group": "tokio-net-feature"
+  },
+  {
+   "id": "ln-006",
+   "project": "lantern",
+   "harness": "codex",
+   "age_days": 120,
+   "turns": [
+    {
+     "user": "cargo check complains about TcpStream not found in tokio::net"
+    },
+    {
+     "tool": {
+      "cmd": "cargo check",
+      "output": "error[E0433]: failed to resolve: could not find `TcpStream` in `net`\n  = note: the item is gated behind the `net` feature",
+      "exit": 101
+     }
+    },
+    {
+     "assistant": "tokio was added with default-features off; enabling the net feature."
+    },
+    {
+     "tool": {
+      "cmd": "cargo check",
+      "output": "    Finished dev [unoptimized + debuginfo] target(s) in 1.12s",
+      "exit": 0
+     }
+    }
+   ],
+   "dup_group": "tokio-net-feature"
+  },
+  {
+   "id": "ln-007",
+   "project": "lantern",
+   "harness": "claude",
+   "age_days": 250,
+   "turns": [
+    {
+     "user": "UdpSocket import fails to resolve"
+    },
+    {
+     "tool": {
+      "cmd": "cargo check",
+      "output": "error[E0432]: unresolved import `tokio::net::UdpSocket`\nnote: found an item that was configured out\n  = note: the item is gated behind the `net` feature",
+      "exit": 101
+     }
+    },
+    {
+     "assistant": "Same cause: the crate pulls tokio with default features disabled. Added features = [\"net\"]."
+    },
+    {
+     "tool": {
+      "cmd": "cargo check",
+      "output": "    Finished dev [unoptimized + debuginfo] target(s) in 1.40s",
+      "exit": 0
+     }
+    }
+   ],
+   "dup_group": "tokio-net-feature"
+  },
+  {
+   "id": "ln-004",
+   "project": "lantern",
+   "harness": "codex",
+   "age_days": 9,
+   "turns": [
+    {
+     "user": "add a --port flag to main"
+    },
+    {
+     "assistant": "Parsed std::env::args for --port with a default of 7000."
+    },
+    {
+     "tool": {
+      "cmd": "cargo test",
+      "output": "test result: ok. 6 passed; 0 failed",
+      "exit": 0
+     }
+    }
+   ]
+  },
+  {
+   "id": "ln-005",
+   "project": "lantern",
+   "harness": "grok",
+   "age_days": 60,
+   "turns": [
+    {
+     "user": "rename the read helper in io.rs to read_text"
+    },
+    {
+     "tool": {
+      "cmd": "rg -n 'io::read' src",
+      "output": "src/main.rs:9:    let cfg = io::read(\"lantern.toml\").await;",
+      "exit": 0
+     }
+    },
+    {
+     "assistant": "Renamed the function and the call site."
+    },
+    {
+     "tool": {
+      "cmd": "cargo build",
+      "output": "    Finished dev [unoptimized + debuginfo] target(s) in 0.95s",
+      "exit": 0
+     }
+    }
+   ]
+  },
+  {
+   "id": "ln-008",
+   "project": "lantern",
+   "harness": "muse",
+   "age_days": 150,
+   "turns": [
+    {
+     "user": "clean up the unused imports in main.rs"
+    },
+    {
+     "user": "add rustfmt.toml with max_width 100"
+    },
+    {
+     "user": "run cargo fmt on everything"
+    }
+   ]
+  },
+  {
+   "id": "ln-009",
+   "project": "lantern",
+   "harness": "codex",
+   "age_days": 300,
+   "turns": [
+    {
+     "user": "call block_on in the request handler to reuse the sync parser"
+    },
+    {
+     "assistant": "Wrapped the parser call in futures::executor::block_on inside the handler."
+    },
+    {
+     "tool": {
+      "cmd": "cargo test",
+      "output": "test result: ok. 4 passed; 0 failed",
+      "exit": 0
+     }
+    },
+    {
+     "assistant": "Works in the unit tests."
+    }
+   ]
+  }
+ ],
+ "memories": [
+  {
+   "id": "m-ln-features",
+   "project": "lantern",
+   "age_days": 13,
+   "action": "tokio is declared with default-features = false: every module needs its feature listed in Cargo.toml (net for TcpListener, TcpStream, UdpSocket). An unresolved import gated behind a feature means add the feature.",
+   "applicability": "Tokio import errors saying an item is configured out or gated behind a feature in lantern.",
+   "sources": [
+    {
+     "episode": "ln-003",
+     "contains": "gated behind the `net` feature"
+    }
+   ],
+   "validity": [
+    {
+     "path": "Cargo.toml",
+     "contains": "\"net\""
+    }
+   ]
+  }
+ ],
+ "mutations": [
+  {
+   "project": "lantern",
+   "path": "docs/NOTES.md",
+   "content": "todo: look at metrics\n",
+   "commit": true
+  }
+ ],
+ "cases": [
+  {
+   "id": "ln-c1",
+   "split": "dev",
+   "category": "exact_identifier",
+   "project": "lantern",
+   "query": "error[E0432]: unresolved import `tokio::net::TcpListener`",
+   "expect": "match",
+   "relevant": [
+    "ln-003",
+    "ln-006",
+    "ln-007"
+   ],
+   "valid_memories": [
+    "m-ln-features"
+   ],
+   "forbidden": [
+    "qr-004"
+   ]
+  },
+  {
+   "id": "ln-c2",
+   "split": "dev",
+   "category": "duplicate",
+   "project": "lantern",
+   "query": "tokio net items configured out after trimming default features",
+   "expect": "match",
+   "relevant": [
+    "ln-003",
+    "ln-006",
+    "ln-007"
+   ],
+   "valid_memories": [
+    "m-ln-features"
+   ]
+  },
+  {
+   "id": "ln-c3",
+   "split": "dev",
+   "category": "short_identifier",
+   "project": "lantern",
+   "query": "IO",
+   "expect": "match",
+   "relevant": [
+    "ln-002"
+   ],
+   "misleading": [
+    "ln-005"
+   ]
+  },
+  {
+   "id": "ln-c4",
+   "split": "dev",
+   "category": "trajectory",
+   "project": "lantern",
+   "query": "replace std::fs with tokio::fs to fix executor stalls",
+   "expect": "match",
+   "relevant": [
+    "ln-002"
+   ]
+  },
+  {
+   "id": "ln-c5",
+   "split": "dev",
+   "category": "exact_identifier",
+   "project": "lantern",
+   "query": "Cannot start a runtime from within a runtime",
+   "expect": "match",
+   "relevant": [
+    "ln-001"
+   ],
+   "misleading": [
+    "ln-009"
+   ]
+  },
+  {
+   "id": "ln-c6",
+   "split": "dev",
+   "category": "temporal",
+   "project": "lantern",
+   "query": "block_on inside an async request handler",
+   "expect": "match",
+   "relevant": [
+    "ln-001"
+   ],
+   "misleading": [
+    "ln-009"
+   ]
+  },
+  {
+   "id": "ln-c7",
+   "split": "dev",
+   "category": "valid_after_unrelated_commit",
+   "project": "lantern",
+   "query": "TcpListener import not found with features trimmed",
+   "expect": "match",
+   "relevant": [
+    "ln-003",
+    "ln-006",
+    "ln-007"
+   ],
+   "valid_memories": [
+    "m-ln-features"
+   ]
+  },
+  {
+   "id": "ln-c8",
+   "split": "dev",
+   "category": "contradiction",
+   "project": "lantern",
+   "query": "use futures::executor::block_on in the handler to call the sync parser",
+   "expect": "match",
+   "relevant": [
+    "ln-001"
+   ],
+   "misleading": [
+    "ln-009"
+   ]
+  },
+  {
+   "id": "ln-c9",
+   "split": "dev",
+   "category": "negative",
+   "project": "lantern",
+   "query": "tokio::select! cancels a future in the middle of a write",
+   "expect": "abstain",
+   "misleading": [
+    "ln-001"
+   ]
+  },
+  {
+   "id": "ln-c10",
+   "split": "dev",
+   "category": "negative",
+   "project": "lantern",
+   "query": "cargo build fails: linker cc not found inside docker",
+   "expect": "abstain",
+   "forbidden": [
+    "lf-001"
+   ]
+  },
+  {
+   "id": "ln-c11",
+   "split": "dev",
+   "category": "id_collision",
+   "project": "lantern",
+   "query": "p95 latency spikes under load, stdout logging",
+   "expect": "match",
+   "relevant": [
+    "ln-002"
+   ],
+   "forbidden": [
+    "vl-001"
+   ]
+  },
+  {
+   "id": "ln-c12",
+   "split": "dev",
+   "category": "paraphrase",
+   "project": "lantern",
+   "query": "response times get ragged under concurrency though disk access seems innocent",
+   "expect": "match",
+   "relevant": [
+    "ln-002"
+   ]
+  },
+  {
+   "id": "ln-c13",
+   "split": "dev",
+   "category": "paraphrase",
+   "project": "lantern",
+   "query": "crash on boot right after splitting the settings loader into its own function that waits on a future",
+   "expect": "match",
+   "relevant": [
+    "ln-001"
+   ],
+   "misleading": [
+    "ln-009"
+   ]
+  }
+ ]
+}

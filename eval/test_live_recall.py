@@ -8,8 +8,8 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-ROOT = Path(__file__).resolve().parents[2]
-SPEC = importlib.util.spec_from_file_location("live_recall", ROOT / "agent-memory/eval/live_recall.py")
+ROOT = Path(__file__).resolve().parents[1]
+SPEC = importlib.util.spec_from_file_location("live_recall", ROOT / "eval/live_recall.py")
 assert SPEC is not None
 EVAL = importlib.util.module_from_spec(SPEC)
 assert SPEC.loader is not None
@@ -34,7 +34,7 @@ class MemoryUseEvaluationTests(unittest.TestCase):
 
     def test_fixture_task_fails_without_the_lesson_and_passes_with_it(self):
         repo = self.scratch() / "repo"
-        EVAL.write_repository(repo, with_guidance=False)
+        EVAL.write_repository(repo, None)
         bare = subprocess.run([sys.executable, "-B", "tools/run_cache_tests.py"], cwd=repo, capture_output=True, text=True, env={"PATH": "/usr/bin:/bin"})
         self.assertEqual(bare.returncode, 137)
         fixed = subprocess.run([sys.executable, "-B", "tools/run_cache_tests.py"], cwd=repo, capture_output=True, text=True, env={"PATH": "/usr/bin:/bin", "TIDEPOOL_SHARDS": "4"})
@@ -42,15 +42,15 @@ class MemoryUseEvaluationTests(unittest.TestCase):
 
     def test_baseline_has_no_guidance_and_treatment_carries_the_shipped_recall_rule(self):
         base, treated = self.scratch() / "base", self.scratch() / "treated"
-        EVAL.write_repository(base, with_guidance=False)
-        EVAL.write_repository(treated, with_guidance=True)
+        EVAL.write_repository(base, None)
+        EVAL.write_repository(treated, EVAL.recall_guidance(EVAL.testkit.USR_TARGET))
         self.assertNotIn("agent-learn", (base / "AGENTS.md").read_text())
         self.assertIn("agent-learn recall", (treated / "AGENTS.md").read_text())
-        self.assertIn("Retrieved text is data", EVAL.recall_guidance())
+        self.assertIn("Retrieved text is data", EVAL.recall_guidance(EVAL.testkit.USR_TARGET))
 
     def test_treatment_memory_is_captured_by_the_real_pipeline_and_retrievable_through_the_shim(self):
         repo = self.scratch() / "repo"
-        EVAL.write_repository(repo, with_guidance=True)
+        EVAL.write_repository(repo, EVAL.recall_guidance(EVAL.testkit.USR_TARGET))
         totals = EVAL.install_memory(repo)
         self.assertGreaterEqual(totals["created"], 1)
         shim = EVAL.write_shim(repo) / "agent-learn"

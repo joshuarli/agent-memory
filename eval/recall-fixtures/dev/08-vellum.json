@@ -1,0 +1,392 @@
+{
+ "now": "2026-10-20T12:00:00Z",
+ "projects": {
+  "vellum": {
+   "files": {
+    "package.json": "{\n  \"name\": \"vellum\",\n  \"engines\": { \"node\": \">=18\" },\n  \"dependencies\": {\n    \"remark-parse\": \"9.0.0\",\n    \"unified\": \"9.2.2\"\n  }\n}\n",
+    "src/render.ts": "export const escape = (s: string) => s.replace(/[&<>]/g, (c) => '&#' + c.charCodeAt(0) + ';');\n",
+    "src/merge.ts": "export const merge = (a: object, b: object) => structuredClone({ ...a, ...b });\n",
+    "tsconfig.json": "{ \"compilerOptions\": { \"target\": \"es2022\" } }\n"
+   }
+  }
+ },
+ "episodes": [
+  {
+   "id": "vl-001",
+   "project": "vellum",
+   "harness": "codex",
+   "age_days": 40,
+   "turns": [
+    {
+     "user": "build fails after bumping remark-parse to 10"
+    },
+    {
+     "tool": {
+      "cmd": "npm run build:cjs",
+      "output": "Error [ERR_REQUIRE_ESM]: require() of ES Module /app/node_modules/remark-parse/index.js from /app/dist/render.cjs not supported.\nInstead change the require of index.js in /app/dist/render.cjs to a dynamic import() which is available in all CommonJS modules.\n    at Module._extensions..js (node:internal/modules/cjs/loader:1157:13)",
+      "exit": 1
+     }
+    },
+    {
+     "assistant": "remark-parse 10 and later are ESM-only, and vellum still publishes a CommonJS build. 9.0.0 with unified 9.2.2 are the last CJS releases; going ESM-only would be a breaking major, so stay on them."
+    },
+    {
+     "tool": {
+      "cmd": "npm i -E remark-parse@9.0.0 unified@9.2.2 && npm run build:cjs && npm test",
+      "output": "added 2 packages, removed 14 packages\n Test Files  4 passed (4)\n      Tests  24 passed (24)",
+      "exit": 0
+     }
+    }
+   ],
+   "native_id": "sess-0042"
+  },
+  {
+   "id": "vl-002",
+   "project": "vellum",
+   "harness": "claude",
+   "age_days": 150,
+   "turns": [
+    {
+     "user": "CI on node 16 fails: ReferenceError: structuredClone is not defined"
+    },
+    {
+     "tool": {
+      "cmd": "npx vitest run",
+      "output": "FAIL  src/merge.test.ts > merge > clones nested\nReferenceError: structuredClone is not defined\n ❯ merge src/merge.ts:14:18\n Test Files  1 failed | 3 passed (4)",
+      "exit": 1
+     }
+    },
+    {
+     "assistant": "structuredClone arrived in Node 17, while engines still says >=16."
+    },
+    {
+     "user": "Drop node 16 from the CI matrix and set engines to >=18. No polyfill."
+    },
+    {
+     "tool": {
+      "cmd": "node -v && npx vitest run",
+      "output": "v18.20.2\n Test Files  4 passed (4)",
+      "exit": 0
+     }
+    }
+   ]
+  },
+  {
+   "id": "vl-003",
+   "project": "vellum",
+   "harness": "grok",
+   "age_days": 90,
+   "turns": [
+    {
+     "user": "I bet the regex based escape() is slower than a character loop, rewrite it"
+    },
+    {
+     "tool": {
+      "cmd": "npx vitest bench",
+      "output": "escape regex   1,203,411 hz  \nescape loop      498,220 hz  \n  regex is 2.42x faster than loop",
+      "exit": 0
+     }
+    },
+    {
+     "assistant": "The assumption was wrong, the regex wins by a wide margin. Leaving escape() alone."
+    },
+    {
+     "user": "keep the regex, revert the loop"
+    }
+   ]
+  },
+  {
+   "id": "vl-004",
+   "project": "vellum",
+   "harness": "codex",
+   "age_days": 11,
+   "turns": [
+    {
+     "user": "add a unit test for escape() with an ampersand"
+    },
+    {
+     "assistant": "Added a case to render.test.ts."
+    },
+    {
+     "tool": {
+      "cmd": "npx vitest run src/render.test.ts",
+      "output": "Tests  7 passed (7)",
+      "exit": 0
+     }
+    }
+   ]
+  },
+  {
+   "id": "vl-005",
+   "project": "vellum",
+   "harness": "claude",
+   "age_days": 30,
+   "turns": [
+    {
+     "user": "export the escape helper from index.ts"
+    },
+    {
+     "assistant": "Added the named export."
+    },
+    {
+     "tool": {
+      "cmd": "npx tsc --noEmit",
+      "output": "",
+      "exit": 0
+     }
+    }
+   ]
+  },
+  {
+   "id": "vl-006",
+   "project": "vellum",
+   "harness": "muse",
+   "age_days": 75,
+   "turns": [
+    {
+     "user": "document the merge function in the README"
+    },
+    {
+     "user": "add a license badge"
+    },
+    {
+     "user": "fix the typo in the CHANGELOG"
+    }
+   ]
+  },
+  {
+   "id": "vl-008",
+   "project": "vellum",
+   "harness": "codex",
+   "age_days": 340,
+   "turns": [
+    {
+     "user": "use remark-parse 10 in the docs site build script"
+    },
+    {
+     "tool": {
+      "cmd": "node scripts/docs.mjs",
+      "output": "built 38 pages in 1.9s",
+      "exit": 0
+     }
+    },
+    {
+     "assistant": "scripts/docs.mjs is a native ES module, so the ESM-only remark-parse 10 loads fine there."
+    }
+   ]
+  },
+  {
+   "id": "vl-009",
+   "project": "vellum",
+   "harness": "claude",
+   "age_days": 120,
+   "turns": [
+    {
+     "user": "why does escape() only handle & < > and not quotes?"
+    },
+    {
+     "tool": {
+      "cmd": "rg -n 'setAttr|JSON.stringify' src",
+      "output": "src/html.ts:22:export const setAttr = (k: string, v: string) => `${k}=${JSON.stringify(v)}`;",
+      "exit": 0
+     }
+    },
+    {
+     "assistant": "Attribute values go through setAttr, which quotes them with JSON.stringify. Escaping quotes in escape() as well would double-escape attribute values, so the narrow set is intentional. No change."
+    }
+   ]
+  }
+ ],
+ "memories": [
+  {
+   "id": "m-vl-remark",
+   "project": "vellum",
+   "age_days": 39,
+   "action": "Keep remark-parse at 9.0.0 and unified at 9.2.2: later releases are ESM-only and break the CommonJS build with ERR_REQUIRE_ESM. Going ESM-only is a breaking major.",
+   "applicability": "Dependency bumps for remark or unified, or ERR_REQUIRE_ESM in the cjs build of vellum.",
+   "sources": [
+    {
+     "episode": "vl-001",
+     "contains": "ESM-only"
+    }
+   ],
+   "validity": [
+    {
+     "path": "package.json",
+     "contains": "\"remark-parse\": \"9.0.0\""
+    }
+   ]
+  }
+ ],
+ "mutations": [
+  {
+   "project": "vellum",
+   "path": "docs/NOTES.md",
+   "content": "release notes draft\n",
+   "commit": true
+  }
+ ],
+ "cases": [
+  {
+   "id": "vl-c1",
+   "split": "dev",
+   "category": "version",
+   "project": "vellum",
+   "query": "remark-parse 10 ERR_REQUIRE_ESM in the cjs build",
+   "expect": "match",
+   "relevant": [
+    "vl-001"
+   ],
+   "valid_memories": [
+    "m-vl-remark"
+   ],
+   "misleading": [
+    "vl-008"
+   ],
+   "forbidden": [
+    "hb-001"
+   ]
+  },
+  {
+   "id": "vl-c2",
+   "split": "dev",
+   "category": "exact_identifier",
+   "project": "vellum",
+   "query": "Error [ERR_REQUIRE_ESM]: require() of ES Module remark-parse",
+   "expect": "match",
+   "relevant": [
+    "vl-001"
+   ],
+   "valid_memories": [
+    "m-vl-remark"
+   ],
+   "misleading": [
+    "vl-008"
+   ],
+   "forbidden": [
+    "hb-010"
+   ]
+  },
+  {
+   "id": "vl-c3",
+   "split": "dev",
+   "category": "version",
+   "project": "vellum",
+   "query": "structuredClone is not defined on node 16",
+   "expect": "match",
+   "relevant": [
+    "vl-002"
+   ]
+  },
+  {
+   "id": "vl-c4",
+   "split": "dev",
+   "category": "valid_after_unrelated_commit",
+   "project": "vellum",
+   "query": "should we upgrade unified to the latest",
+   "expect": "match",
+   "relevant": [
+    "vl-001"
+   ],
+   "valid_memories": [
+    "m-vl-remark"
+   ],
+   "misleading": [
+    "vl-008"
+   ]
+  },
+  {
+   "id": "vl-c5",
+   "split": "dev",
+   "category": "trajectory",
+   "project": "vellum",
+   "query": "rewrite escape() as a manual character loop for speed",
+   "expect": "match",
+   "relevant": [
+    "vl-003"
+   ],
+   "misleading": [
+    "vl-004"
+   ]
+  },
+  {
+   "id": "vl-c6",
+   "split": "dev",
+   "category": "negative",
+   "project": "vellum",
+   "query": "vitest snapshot mismatch after the prettier upgrade",
+   "expect": "abstain",
+   "forbidden": [
+    "hb-008"
+   ]
+  },
+  {
+   "id": "vl-c7",
+   "split": "dev",
+   "category": "negative",
+   "project": "vellum",
+   "query": "publish vellum to npm with provenance",
+   "expect": "abstain",
+   "misleading": [
+    "vl-005"
+   ]
+  },
+  {
+   "id": "vl-c8",
+   "split": "dev",
+   "category": "paraphrase",
+   "project": "vellum",
+   "query": "dual-format package cannot load the markdown parser once compiled to commonjs",
+   "expect": "match",
+   "relevant": [
+    "vl-001"
+   ],
+   "valid_memories": [
+    "m-vl-remark"
+   ],
+   "misleading": [
+    "vl-008"
+   ]
+  },
+  {
+   "id": "vl-c9",
+   "split": "dev",
+   "category": "id_collision",
+   "project": "vellum",
+   "query": "ERR_REQUIRE_ESM remark-parse",
+   "expect": "match",
+   "relevant": [
+    "vl-001"
+   ],
+   "forbidden": [
+    "ln-002"
+   ]
+  },
+  {
+   "id": "vl-c10",
+   "split": "dev",
+   "category": "provenance",
+   "project": "vellum",
+   "query": "which session showed that node 16 can't be supported any more",
+   "expect": "match",
+   "relevant": [
+    "vl-002"
+   ]
+  },
+  {
+   "id": "vl-c11",
+   "split": "dev",
+   "category": "nonobvious_success",
+   "project": "vellum",
+   "query": "should escape() also escape quotes",
+   "expect": "match",
+   "relevant": [
+    "vl-009"
+   ],
+   "misleading": [
+    "vl-003",
+    "vl-004"
+   ]
+  }
+ ]
+}

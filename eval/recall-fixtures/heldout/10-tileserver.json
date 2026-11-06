@@ -1,0 +1,317 @@
+{
+ "now": "2026-10-20T12:00:00Z",
+ "projects": {
+  "tileserver": {
+   "files": {
+    "go.mod": "module example.invalid/tiled\n\ngo 1.22\n",
+    "Makefile": "run:\n\tgo run ./cmd/tiled\n\ntest:\n\tgo test ./...\n",
+    "config.yaml": "listen: :8080\ncache_ttl: 30s\npostgis: postgres://tiles@db/osm\n",
+    "cmd/tiled/main.go": "package main\n\nfunc main() {}\n",
+    "internal/cache/cache.go": "package cache\n\nimport \"golang.org/x/sync/singleflight\"\n\ntype Cache struct{ group singleflight.Group }\n",
+    "internal/mvt/encode.go": "package mvt\n\nconst Extent = 4096\n",
+    "README.md": "Vector tile server over PostGIS.\n"
+   },
+   "worktrees": {
+    "hotfix-cache": {
+     "files": {
+      "internal/cache/cache.go": "package cache\n\nimport \"sync\"\n\ntype Cache struct{ mu sync.Mutex; m map[string][]byte }\n"
+     }
+    }
+   }
+  }
+ },
+ "episodes": [
+  {
+   "id": "ts-gc",
+   "project": "tileserver",
+   "harness": "grok",
+   "age_days": 30,
+   "turns": [
+    {
+     "user": "p99 jumps from 40 ms to 400 ms roughly every two minutes. I think it's Go garbage collection, tune GOGC."
+    },
+    {
+     "tool": {
+      "cmd": "GODEBUG=gctrace=1 ./tiled 2>&1 | grep -E '^gc ' | tail -n 3",
+      "output": "gc 41 @120.301s 1%: 0.018+1.2+0.004 ms clock, 0.14+0.21/2.1/0+0.03 ms cpu, 1890->1912->960 MB, 8 P\ngc 42 @241.774s 1%: 0.021+1.1+0.003 ms clock, 0.17+0.30/2.0/0+0.02 ms cpu, 1893->1915->961 MB, 8 P\ngc 43 @362.870s 1%: 0.019+1.3+0.005 ms clock, 0.15+0.24/2.2/0+0.03 ms cpu, 1892->1914->960 MB, 8 P",
+      "exit": 0
+     }
+    },
+    {
+     "assistant": "GC pauses are about 1.2 ms, so GC is not the cause. The spikes line up with cache_ttl: 30s expiry of hot tiles where hundreds of requests all miss at once and hit PostGIS. Adding singleflight around the cache fill."
+    },
+    {
+     "tool": {
+      "cmd": "hey -z 5m -c 64 http://localhost:8080/tiles/12/2201/1343.mvt | grep -E '99%|Status'",
+      "output": "  99% in 0.0381 secs\n  [200]\t287454 responses",
+      "exit": 0
+     }
+    },
+    {
+     "assistant": "p99 38 ms before 405 ms."
+    }
+   ]
+  },
+  {
+   "id": "ts-proj",
+   "project": "tileserver",
+   "harness": "codex",
+   "age_days": 56,
+   "turns": [
+    {
+     "user": "Reprojection fails in the alpine container, works on my Mac."
+    },
+    {
+     "tool": {
+      "cmd": "docker run --rm tiled:alpine tiled reproject --from EPSG:4326 --to EPSG:3857 pt.json",
+      "output": "ERROR: transform: proj_create_crs_to_crs: Cannot find proj.db\nexit 1",
+      "exit": 1
+     }
+    },
+    {
+     "assistant": "The alpine image has the proj library but not the data package. Installing proj-data and pointing PROJ_DATA at /usr/share/proj."
+    },
+    {
+     "tool": {
+      "cmd": "docker build -t tiled:alpine . && docker run --rm -e PROJ_DATA=/usr/share/proj tiled:alpine tiled reproject --from EPSG:4326 --to EPSG:3857 pt.json",
+      "output": "{\"x\": -8238310.24, \"y\": 4970071.58}",
+      "exit": 0
+     }
+    }
+   ],
+   "native_id": "b7e24c90"
+  },
+  {
+   "id": "ts-mvt-extent",
+   "project": "tileserver",
+   "harness": "claude",
+   "age_days": 92,
+   "turns": [
+    {
+     "user": "Vector tiles render shifted by a few pixels at the tile edges in the web client."
+    },
+    {
+     "assistant": "I changed the encoder to quantize to 256 so tiles are smaller."
+    },
+    {
+     "user": "No. The clients are Mapbox GL and expect extent 4096. Quantizing to 256 snaps geometry onto a coarse grid and shifts everything. Extent stays 4096 always."
+    },
+    {
+     "tool": {
+      "cmd": "git checkout -- internal/mvt/encode.go && go test ./internal/mvt",
+      "output": "ok  \texample.invalid/tiled/internal/mvt\t0.211s",
+      "exit": 0
+     }
+    }
+   ]
+  },
+  {
+   "id": "ts-fmt-muse",
+   "project": "tileserver",
+   "harness": "muse",
+   "age_days": 13,
+   "turns": [
+    {
+     "user": "gofmt the cache package"
+    },
+    {
+     "user": "add a doc comment to Extent"
+    },
+    {
+     "user": "ok, that's all for now"
+    }
+   ]
+  },
+  {
+   "id": "ts-bump",
+   "project": "tileserver",
+   "harness": "codex",
+   "age_days": 19,
+   "turns": [
+    {
+     "user": "Bump the pgx driver."
+    },
+    {
+     "tool": {
+      "cmd": "go get github.com/jackc/pgx/v5@latest && go test ./...",
+      "output": "go: upgraded github.com/jackc/pgx/v5 v5.7.1 => v5.7.2\nok  \texample.invalid/tiled/internal/mvt\t0.208s",
+      "exit": 0
+     }
+    },
+    {
+     "assistant": "Done. Nothing else needs changing."
+    }
+   ]
+  },
+  {
+   "id": "ts-readme",
+   "project": "tileserver",
+   "harness": "grok",
+   "age_days": 7,
+   "turns": [
+    {
+     "user": "Document the config keys."
+    },
+    {
+     "tool": {
+      "cmd": "cat config.yaml",
+      "output": "listen: :8080\ncache_ttl: 30s\npostgis: postgres://tiles@db/osm",
+      "exit": 0
+     }
+    },
+    {
+     "assistant": "README now lists listen, cache_ttl and postgis."
+    }
+   ]
+  }
+ ],
+ "memories": [
+  {
+   "id": "m-ts-single",
+   "project": "tileserver",
+   "age_days": 29,
+   "action": "Tile cache fills must go through singleflight (internal/cache). Latency spikes on hot-tile expiry came from stampedes on PostGIS, not from Go GC.",
+   "applicability": "Periodic p99 latency spikes in tile serving.",
+   "sources": [
+    {
+     "episode": "ts-gc",
+     "contains": "Adding singleflight around the cache fill"
+    }
+   ],
+   "validity": [
+    {
+     "path": "internal/cache/cache.go",
+     "contains": "singleflight.Group"
+    }
+   ]
+  }
+ ],
+ "mutations": [],
+ "cases": [
+  {
+   "id": "ts-short-gc",
+   "split": "heldout",
+   "category": "short_identifier",
+   "project": "tileserver",
+   "query": "GC",
+   "expect": "match",
+   "relevant": [
+    "ts-gc"
+   ]
+  },
+  {
+   "id": "ts-traj-gogc",
+   "split": "heldout",
+   "category": "trajectory",
+   "project": "tileserver",
+   "query": "did we already try tuning GOGC for the latency spikes",
+   "expect": "match",
+   "relevant": [
+    "ts-gc"
+   ]
+  },
+  {
+   "id": "ts-cmd-gctrace",
+   "split": "heldout",
+   "category": "path_symbol_command",
+   "project": "tileserver",
+   "query": "GODEBUG=gctrace=1",
+   "expect": "match",
+   "relevant": [
+    "ts-gc"
+   ]
+  },
+  {
+   "id": "ts-exact-projdb",
+   "split": "heldout",
+   "category": "exact_identifier",
+   "project": "tileserver",
+   "query": "proj_create_crs_to_crs: Cannot find proj.db",
+   "expect": "match",
+   "relevant": [
+    "ts-proj"
+   ]
+  },
+  {
+   "id": "ts-coll-proj",
+   "split": "heldout",
+   "category": "id_collision",
+   "project": "tileserver",
+   "query": "Cannot find proj.db in alpine container reprojection",
+   "expect": "match",
+   "relevant": [
+    "ts-proj"
+   ],
+   "forbidden": [
+    "km-insmod"
+   ]
+  },
+  {
+   "id": "ts-para-stall",
+   "split": "heldout",
+   "category": "paraphrase",
+   "project": "tileserver",
+   "query": "requests periodically stall for hundreds of milliseconds",
+   "expect": "match",
+   "relevant": [
+    "ts-gc"
+   ]
+  },
+  {
+   "id": "ts-para-edges",
+   "split": "heldout",
+   "category": "paraphrase",
+   "project": "tileserver",
+   "query": "vector geometry is offset by a few pixels at the borders in the client",
+   "expect": "match",
+   "relevant": [
+    "ts-mvt-extent"
+   ]
+  },
+  {
+   "id": "ts-wt-main",
+   "split": "heldout",
+   "category": "worktree",
+   "project": "tileserver",
+   "query": "tile cache stampede when hot tiles expire",
+   "expect": "match",
+   "relevant": [
+    "ts-gc"
+   ],
+   "valid_memories": [
+    "m-ts-single"
+   ]
+  },
+  {
+   "id": "ts-wt-hotfix",
+   "split": "heldout",
+   "category": "worktree",
+   "project": "tileserver",
+   "query": "tile cache stampede when hot tiles expire",
+   "expect": "match",
+   "relevant": [
+    "ts-gc"
+   ],
+   "worktree": "hotfix-cache",
+   "stale_memories": [
+    "m-ts-single"
+   ]
+  },
+  {
+   "id": "ts-neg-gdal",
+   "split": "heldout",
+   "category": "negative",
+   "project": "tileserver",
+   "query": "serve raster tiles using GDAL warp",
+   "expect": "abstain"
+  },
+  {
+   "id": "ts-neg-gomaxprocs",
+   "split": "heldout",
+   "category": "negative",
+   "project": "tileserver",
+   "query": "set GOMAXPROCS to respect container cpu limits",
+   "expect": "abstain"
+  }
+ ]
+}

@@ -1,0 +1,505 @@
+{
+ "now": "2026-10-20T12:00:00Z",
+ "projects": {
+  "quarry": {
+   "files": {
+    "go.mod": "module quarry\n\ngo 1.22\n",
+    "Makefile": "test:\n\tgo test -race ./...\n",
+    "internal/index/index.go": "package index\n\nimport (\n\t\"os\"\n\t\"sync\"\n)\n\ntype Index struct {\n\tmu       sync.RWMutex\n\tpostings map[string][]int\n}\n\nfunc load(path string) ([]byte, error) { return os.ReadFile(path) }\n",
+    "deploy/quarry.service": "[Service]\nEnvironment=GOMEMLIMIT=900MiB GOGC=200\nMemoryMax=1G\nExecStart=/usr/local/bin/quarry\n",
+    "cmd/quarry/main.go": "package main\n\nfunc main() {}\n"
+   },
+   "worktrees": {
+    "mmap-spike": {
+     "files": {
+      "internal/index/index.go": "package index\n\nimport (\n\t\"sync\"\n\t\"syscall\"\n)\n\ntype Index struct {\n\tpostings sync.Map\n}\n\nvar _ = syscall.Mmap\n"
+     }
+    }
+   }
+  }
+ },
+ "episodes": [
+  {
+   "id": "qr-001",
+   "project": "quarry",
+   "harness": "codex",
+   "age_days": 28,
+   "turns": [
+    {
+     "user": "go test -race fails intermittently in CI for the index package"
+    },
+    {
+     "tool": {
+      "cmd": "go test -race ./internal/index",
+      "output": "==================\nWARNING: DATA RACE\nWrite at 0x00c0001a2150 by goroutine 14:\n  quarry/internal/index.(*Index).Add()\n      /src/internal/index/index.go:41 +0x8c\n\nPrevious read at 0x00c0001a2150 by goroutine 13:\n  quarry/internal/index.(*Index).Lookup()\n      /src/internal/index/index.go:58 +0x64\n==================\n--- FAIL: TestConcurrentAddLookup (0.02s)\nFAIL\nFAIL\tquarry/internal/index\t0.318s",
+      "exit": 1
+     }
+    },
+    {
+     "assistant": "Add writes the postings map while Lookup reads it with no synchronization. sync.Map would allocate on every Lookup; a sync.RWMutex around the map is enough."
+    },
+    {
+     "tool": {
+      "cmd": "go test -race -count=20 ./internal/index",
+      "output": "ok  \tquarry/internal/index\t4.212s",
+      "exit": 0
+     }
+    }
+   ]
+  },
+  {
+   "id": "qr-002",
+   "project": "quarry",
+   "harness": "claude",
+   "age_days": 60,
+   "turns": [
+    {
+     "user": "p99 latency spikes every few seconds on the quarry box, suspect GC"
+    },
+    {
+     "tool": {
+      "cmd": "GODEBUG=gctrace=1 ./quarry --replay trace.log 2>&1 | tail -2",
+      "output": "gc 187 @39.8s 13%: 0.05+30+0.02 ms clock, 598->631->298 MB, 640 MB goal, 8 P\ngc 188 @40.3s 14%: 0.05+31+0.02 ms clock, 612->640->301 MB, 640 MB goal, 8 P",
+      "exit": 0
+     }
+    },
+    {
+     "tool": {
+      "cmd": "./loadtest --gogc 100 && ./loadtest --gogc 400",
+      "output": "GOGC=100 p99=80ms rss=640MB\nGOGC=400 p99=31ms rss=1.7GB",
+      "exit": 0
+     }
+    },
+    {
+     "tool": {
+      "cmd": "journalctl -u quarry -n 2 --no-pager",
+      "output": "kernel: Out of memory: Killed process 2211 (quarry) total-vm:2210468kB\nsystemd[1]: quarry.service: Main process exited, code=killed, status=9/KILL",
+      "exit": 0
+     }
+    },
+    {
+     "user": "No. The cgroup is 1GiB so GOGC=400 gets us OOM killed. And do not use sync.Pool for postings, the benchmark showed no win. Set GOMEMLIMIT and keep GOGC moderate."
+    },
+    {
+     "tool": {
+      "cmd": "GOMEMLIMIT=900MiB GOGC=200 ./loadtest",
+      "output": "p99=34ms rss=870MB",
+      "exit": 0
+     }
+    }
+   ]
+  },
+  {
+   "id": "qr-003",
+   "project": "quarry",
+   "harness": "grok",
+   "age_days": 160,
+   "turns": [
+    {
+     "user": "try mmap for the index segments instead of ReadFile"
+    },
+    {
+     "tool": {
+      "cmd": "go test ./internal/index -run TestCompactWhileServing",
+      "output": "unexpected fault address 0x7f3a2c000000\nfatal error: fault\n[signal SIGBUS: bus error code=0x2 addr=0x7f3a2c000000 pc=0x4a1b32]\n\ngoroutine 22 [running]:\nquarry/internal/index.(*Segment).Postings(...)\nFAIL\tquarry/internal/index\t0.402s",
+      "exit": 2
+     }
+    },
+    {
+     "assistant": "Compaction truncates and replaces the segment file while a reader still has it mapped; touching pages past the new EOF raises SIGBUS. A safe mmap path needs reference counting on every segment, more machinery than the ReadFile cost it would save."
+    },
+    {
+     "user": "Drop the mmap idea. We keep os.ReadFile and let the page cache do the work."
+    },
+    {
+     "assistant": "Reverted the mmap branch."
+    },
+    {
+     "tool": {
+      "cmd": "go test ./internal/index",
+      "output": "ok  \tquarry/internal/index\t0.311s",
+      "exit": 0
+     }
+    }
+   ],
+   "native_id": "sess-7f3a",
+   "malformed": "partial_tail"
+  },
+  {
+   "id": "qr-004",
+   "project": "quarry",
+   "harness": "codex",
+   "age_days": 1,
+   "turns": [
+    {
+     "user": "rename Index.Add to Index.Insert"
+    },
+    {
+     "tool": {
+      "cmd": "gofmt -l ./... && go build ./...",
+      "output": "",
+      "exit": 0
+     }
+    },
+    {
+     "tool": {
+      "cmd": "go test -race ./...",
+      "output": "ok  \tquarry/internal/index\t1.201s\nok  \tquarry/cmd/quarry\t0.009s",
+      "exit": 0
+     }
+    }
+   ]
+  },
+  {
+   "id": "qr-006",
+   "project": "quarry",
+   "harness": "grok",
+   "age_days": 250,
+   "turns": [
+    {
+     "user": "add a flag for the listen address"
+    },
+    {
+     "assistant": "Added -listen with default :8080 in cmd/quarry/main.go."
+    },
+    {
+     "tool": {
+      "cmd": "go build ./... && ./quarry -listen :9090 -version",
+      "output": "quarry v0.4.1",
+      "exit": 0
+     }
+    }
+   ]
+  },
+  {
+   "id": "qr-007",
+   "project": "quarry",
+   "harness": "muse",
+   "age_days": 35,
+   "turns": [
+    {
+     "user": "update the README with the new -listen flag"
+    },
+    {
+     "user": "add a Makefile target for gofmt"
+    },
+    {
+     "user": "link the new target from CONTRIBUTING"
+    }
+   ]
+  },
+  {
+   "id": "qr-009",
+   "project": "quarry",
+   "harness": "claude",
+   "age_days": 18,
+   "turns": [
+    {
+     "user": "add a benchmark for Lookup"
+    },
+    {
+     "assistant": "Added BenchmarkLookup in index_test.go."
+    },
+    {
+     "tool": {
+      "cmd": "go test -bench Lookup -run xxx ./internal/index",
+      "output": "BenchmarkLookup-8   \t 2896410\t       412.3 ns/op\nPASS",
+      "exit": 0
+     }
+    }
+   ]
+  },
+  {
+   "id": "qr-010",
+   "project": "quarry",
+   "harness": "grok",
+   "age_days": 280,
+   "turns": [
+    {
+     "user": "set GOGC=400 in the systemd unit, the docs say it cuts gc cpu"
+    },
+    {
+     "assistant": "Added Environment=GOGC=400 to deploy/quarry.service."
+    },
+    {
+     "tool": {
+      "cmd": "./loadtest --gogc 400",
+      "output": "GOGC=400 p99=29ms rss=1.2GB",
+      "exit": 0
+     }
+    },
+    {
+     "assistant": "p99 improved from 80ms to 29ms."
+    }
+   ]
+  }
+ ],
+ "memories": [
+  {
+   "id": "m-qr-gc",
+   "project": "quarry",
+   "age_days": 59,
+   "action": "Run quarry with GOMEMLIMIT=900MiB and GOGC=200 inside the 1GiB cgroup. GOGC=400 cuts p99 but gets the process OOM killed, and sync.Pool for postings showed no benefit.",
+   "applicability": "Tuning GC, latency or memory settings for the quarry service.",
+   "sources": [
+    {
+     "episode": "qr-002",
+     "contains": "GOMEMLIMIT"
+    }
+   ],
+   "validity": [
+    {
+     "path": "deploy/quarry.service",
+     "contains": "GOMEMLIMIT=900MiB"
+    }
+   ]
+  }
+ ],
+ "mutations": [
+  {
+   "project": "quarry",
+   "path": "deploy/quarry.service",
+   "content": "[Service]\nEnvironment=GOGC=100\nMemoryMax=1G\nExecStart=/usr/local/bin/quarry\n",
+   "commit": true
+  }
+ ],
+ "cases": [
+  {
+   "id": "qr-c1",
+   "split": "dev",
+   "category": "short_identifier",
+   "project": "quarry",
+   "query": "GC",
+   "expect": "match",
+   "relevant": [
+    "qr-002"
+   ],
+   "stale_memories": [
+    "m-qr-gc"
+   ],
+   "misleading": [
+    "qr-010"
+   ],
+   "forbidden": [
+    "hb-003"
+   ]
+  },
+  {
+   "id": "qr-c2",
+   "split": "dev",
+   "category": "temporal",
+   "project": "quarry",
+   "query": "what GOGC value should the quarry service use",
+   "expect": "match",
+   "relevant": [
+    "qr-002"
+   ],
+   "misleading": [
+    "qr-010"
+   ],
+   "stale_memories": [
+    "m-qr-gc"
+   ]
+  },
+  {
+   "id": "qr-c3",
+   "split": "dev",
+   "category": "exact_identifier",
+   "project": "quarry",
+   "query": "WARNING: DATA RACE in Index.Add and Index.Lookup",
+   "expect": "match",
+   "relevant": [
+    "qr-001"
+   ]
+  },
+  {
+   "id": "qr-c4",
+   "split": "dev",
+   "category": "worktree",
+   "project": "quarry",
+   "query": "data race between Add and Lookup in the index",
+   "expect": "match",
+   "relevant": [
+    "qr-001"
+   ]
+  },
+  {
+   "id": "qr-c5",
+   "split": "dev",
+   "category": "worktree",
+   "project": "quarry",
+   "query": "data race between Add and Lookup in the index",
+   "expect": "match",
+   "worktree": "mmap-spike",
+   "relevant": [
+    "qr-001"
+   ]
+  },
+  {
+   "id": "qr-c6",
+   "split": "dev",
+   "category": "malformed",
+   "project": "quarry",
+   "query": "SIGBUS fatal error: fault reading index segment",
+   "expect": "match",
+   "relevant": [
+    "qr-003"
+   ],
+   "forbidden": [
+    "hb-012"
+   ]
+  },
+  {
+   "id": "qr-c7",
+   "split": "dev",
+   "category": "trajectory",
+   "project": "quarry",
+   "query": "memory map the segment files to cut read cost",
+   "expect": "match",
+   "relevant": [
+    "qr-003"
+   ],
+   "forbidden": [
+    "hb-012"
+   ]
+  },
+  {
+   "id": "qr-c8",
+   "split": "dev",
+   "category": "worktree",
+   "project": "quarry",
+   "query": "should segments be mmapped",
+   "expect": "match",
+   "worktree": "mmap-spike",
+   "relevant": [
+    "qr-003"
+   ]
+  },
+  {
+   "id": "qr-c9",
+   "split": "dev",
+   "category": "stale_source",
+   "project": "quarry",
+   "query": "would sync.Pool for postings lists help the tail latency",
+   "expect": "match",
+   "relevant": [
+    "qr-002"
+   ],
+   "stale_memories": [
+    "m-qr-gc"
+   ]
+  },
+  {
+   "id": "qr-c10",
+   "split": "dev",
+   "category": "negative",
+   "project": "quarry",
+   "query": "reduce the quarry binary size with ldflags",
+   "expect": "abstain",
+   "forbidden": [
+    "fd-006"
+   ]
+  },
+  {
+   "id": "qr-c11",
+   "split": "dev",
+   "category": "negative",
+   "project": "quarry",
+   "query": "goroutine leak in the HTTP handler test",
+   "expect": "abstain",
+   "misleading": [
+    "qr-001"
+   ]
+  },
+  {
+   "id": "qr-c12",
+   "split": "dev",
+   "category": "negative",
+   "project": "quarry",
+   "query": "go test -race fails on alpine: -race requires cgo",
+   "expect": "abstain",
+   "misleading": [
+    "qr-001"
+   ]
+  },
+  {
+   "id": "qr-c13",
+   "split": "dev",
+   "category": "multi_record",
+   "project": "quarry",
+   "query": "get quarry ready for production: concurrency safety and memory settings",
+   "expect": "match",
+   "required": [
+    [
+     "qr-001"
+    ],
+    [
+     "qr-002"
+    ]
+   ],
+   "stale_memories": [
+    "m-qr-gc"
+   ],
+   "relevant": [
+    "qr-001",
+    "qr-002"
+   ]
+  },
+  {
+   "id": "qr-c14",
+   "split": "dev",
+   "category": "id_collision",
+   "project": "quarry",
+   "query": "index segments SIGBUS during compaction",
+   "expect": "match",
+   "relevant": [
+    "qr-003"
+   ],
+   "forbidden": [
+    "hb-012"
+   ]
+  },
+  {
+   "id": "qr-c15",
+   "split": "dev",
+   "category": "paraphrase",
+   "project": "quarry",
+   "query": "latency hiccups on the prod box, the tail gets worse every few seconds",
+   "expect": "match",
+   "relevant": [
+    "qr-002"
+   ],
+   "misleading": [
+    "qr-010"
+   ],
+   "stale_memories": [
+    "m-qr-gc"
+   ]
+  },
+  {
+   "id": "qr-c16",
+   "split": "dev",
+   "category": "provenance",
+   "project": "quarry",
+   "query": "what is the evidence behind the memory limit environment variable in the unit file",
+   "expect": "match",
+   "relevant": [
+    "qr-002"
+   ],
+   "stale_memories": [
+    "m-qr-gc"
+   ]
+  },
+  {
+   "id": "qr-c17",
+   "split": "dev",
+   "category": "paraphrase",
+   "project": "quarry",
+   "query": "intermittent failure only when tests run with the detector for unsynchronized access",
+   "expect": "match",
+   "relevant": [
+    "qr-001"
+   ]
+  }
+ ]
+}

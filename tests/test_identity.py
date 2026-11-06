@@ -6,10 +6,12 @@ import tempfile
 import unittest
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parents[2]
+ROOT = Path(__file__).resolve().parents[1]
 WORK_TMP = ROOT / ".work" / "tmp"
 WORK_TMP.mkdir(parents=True, exist_ok=True)
-SRC_DIR = ROOT / "agent-memory" / "src"
+sys.path.insert(0, str(ROOT / "tests"))
+import testkit  # noqa: E402
+SRC_DIR = testkit.SRC
 sys.path.insert(0, str(SRC_DIR))
 SPEC = importlib.util.spec_from_file_location("agent_session_store", SRC_DIR / "agent_memory" / "store.py")
 STORE_MODULE = importlib.util.module_from_spec(SPEC)
@@ -18,7 +20,6 @@ sys.modules[SPEC.name] = STORE_MODULE
 SPEC.loader.exec_module(STORE_MODULE)
 Store = STORE_MODULE.Store
 project_identity = STORE_MODULE.project_identity
-CLI = ROOT / "dotfiles" / "base" / ".local" / "bin" / "agent-sessions"
 
 ARCHIVE_SPEC = importlib.util.spec_from_file_location("agent_memory_archive", SRC_DIR / "agent_memory" / "archive.py")
 ARCHIVE = importlib.util.module_from_spec(ARCHIVE_SPEC)
