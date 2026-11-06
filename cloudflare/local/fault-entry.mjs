@@ -22,7 +22,7 @@ function limits(env) {
 }
 
 function hit(limit, count) {
-  return limit > 0 && count % limit === 0;
+  return limit > 0 && count === limit;
 }
 
 function countedStatement(statement) {

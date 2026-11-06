@@ -169,13 +169,19 @@ class StackTestCase(unittest.TestCase):
         self.temp = tempfile.TemporaryDirectory(dir=str(WORK_TMP))
         self.addCleanup(self.temp.cleanup)
         self.root = Path(self.temp.name)
-        self.stack = LocalStack(self.ORIGINS)
-        self.addCleanup(self.stack.stop)
         self.identity = self.root / "age.key"
         self.recipient = mirror_crypto.keygen(self.identity)
         self.recipients_file = self.root / "recipients.txt"
         self.recipients_file.write_text(self.recipient + "\n")
         self.recipients = mirror_crypto.load_recipients(self.recipients_file)
+        self.start_stack()
+        self.configure_stack()
+
+    def start_stack(self, extra=()):
+        self.stack = LocalStack(self.ORIGINS, extra)
+        self.addCleanup(self.stack.stop)
+
+    def configure_stack(self):
         self.token_file = Path(self.stack.info["token_files"]["origin-a"])
         self.config = mirror.MirrorConfig(
             url=self.stack.url,
@@ -184,6 +190,18 @@ class StackTestCase(unittest.TestCase):
             age_identity_file=self.identity,
             learning_projection=False,
         )
+
+    def restart(self, extra):
+        self.stack.stop()
+        self.start_stack(extra)
+        self.configure_stack()
+
+    def token_headers(self, origin="origin-a"):
+        value = json.loads(Path(self.stack.info["token_files"][origin]).read_text())
+        return {
+            "CF-Access-Client-Id": value["client_id"],
+            "CF-Access-Client-Secret": value["client_secret"],
+        }
 
     def store(self, name="state", origin="origin-a"):
         store = Store(self.root / name)
@@ -205,18 +223,20 @@ class StackTestCase(unittest.TestCase):
         }, separators=(",", ":")) + "\n")
         return archive_module.capture(store.db, store.archive_dir, "codex", native, source)
 
-    def client(self, config=None):
+    def client(self, config=None, sleep=time.sleep):
         return mirror.MirrorClient(
             config or self.config,
             factory=lambda: http.client.HTTPSConnection(
-                "127.0.0.1", self.stack.port, timeout=30, context=self.stack.tls))
+                "127.0.0.1", self.stack.port, timeout=30, context=self.stack.tls),
+            sleep=sleep)
 
-    def sync(self, store, config=None):
-        client = self.client(config)
+    def sync(self, store, config=None, sleep=time.sleep):
+        client = self.client(config, sleep)
         try:
             return mirror.sync(
                 store, config or self.config, "cloudflare", client=client,
-                upload_client_factory=self.client, recipients=self.recipients, concurrency=1)
+                upload_client_factory=lambda: self.client(config, sleep),
+                recipients=self.recipients, concurrency=1)
         finally:
             client.close()
 
@@ -401,13 +421,6 @@ class SecurityTests(StackTestCase):
         {"client_id": "other-client.access", "origin": "origin-b"},
     ]
 
-    def token_headers(self, origin="origin-a"):
-        value = json.loads(Path(self.stack.info["token_files"][origin]).read_text())
-        return {
-            "CF-Access-Client-Id": value["client_id"],
-            "CF-Access-Client-Secret": value["client_secret"],
-        }
-
     def test_every_route_refuses_an_anonymous_request(self):
         digest = "a" * 64
         paths = [
@@ -463,6 +476,16 @@ class SecurityTests(StackTestCase):
         self.assertEqual(status, 403, body)
         self.assertEqual(self.stack.d1("SELECT count(*) AS count FROM origin_sync", mode="first")["count"], 0)
 
+    def test_a_collector_cannot_read_another_origin_object(self):
+        store = self.store()
+        self.capture(store, "native-1", "cross origin object marker")
+        self.sync(store)
+        row = self.stack.d1(
+            "SELECT ciphertext_digest FROM remote_object WHERE origin_host = 'origin-a' LIMIT 1", mode="first")
+        status, _headers, _body = self.stack.request(
+            "GET", "/api/v1/sync/objects/" + row["ciphertext_digest"], headers=self.token_headers("origin-b"))
+        self.assertEqual(status, 404)
+
     def test_no_secret_or_plaintext_reaches_responses_or_the_tail(self):
         store = self.store()
         marker = "sensitive plaintext marker should never leave the client"
@@ -488,6 +511,111 @@ class SecurityTests(StackTestCase):
             self.assertNotIn(b"AGE-SECRET-KEY", haystack)
             self.assertNotIn(marker.encode(), haystack)
             self.assertNotIn(b"Cf-Access-Jwt-Assertion", haystack)
+
+
+class ReliabilityTests(StackTestCase):
+    @staticmethod
+    def no_sleep(_delay):
+        pass
+
+    def drops(self):
+        status, _headers, body = self.stack.request("GET", "/__test/faults")
+        self.assertEqual(status, 200)
+        return json.loads(body)["drops"]
+
+    def test_an_interrupted_object_upload_retries(self):
+        self.restart(("--drop-request-path", "/api/v1/sync/objects/", "--drop-request-method", "PUT"))
+        store = self.store()
+        self.capture(store, "native-1", "interrupted upload marker")
+        result = self.sync(store, sleep=self.no_sleep)
+        self.assertEqual(result["generations_committed"], 1)
+        self.assertEqual(self.stack.d1("SELECT count(*) AS count FROM generation", mode="first")["count"], 1)
+        self.assertGreaterEqual(self.stack.d1(
+            "SELECT count(*) AS count FROM generation_object", mode="first")["count"], 1)
+        self.assertEqual(self.drops(), 1)
+
+    def test_a_lost_commit_response_reacks_without_extra_rows(self):
+        self.restart(("--drop-response-path", "/api/v1/sync/generations", "--drop-response-method", "POST"))
+        store = self.store()
+        self.capture(store, "native-1", "lost commit response marker")
+        result = self.sync(store, sleep=self.no_sleep)
+        self.assertEqual(result["generations_committed"], 1)
+        self.assertEqual(self.stack.d1("SELECT count(*) AS count FROM generation", mode="first")["count"], 1)
+        self.assertEqual(self.stack.d1(
+            "SELECT count(*) AS count FROM generation_object", mode="first")["count"], 1)
+        self.assertEqual(self.drops(), 1)
+
+    def test_a_failed_d1_batch_retries_cleanly(self):
+        self.restart(("--d1-batch-fault-every", "1"))
+        store = self.store()
+        self.capture(store, "native-1", "failed batch marker")
+        result = self.sync(store, sleep=self.no_sleep)
+        self.assertEqual(result["generations_committed"], 1)
+        self.assertEqual(self.stack.d1("SELECT count(*) AS count FROM generation", mode="first")["count"], 1)
+        self.assertEqual(self.stack.d1(
+            "SELECT count(*) AS count FROM generation_object", mode="first")["count"], 1)
+
+    def test_a_missing_r2_object_is_detected(self):
+        store = self.store()
+        self.capture(store, "native-1", "missing object marker")
+        self.sync(store)
+        row = self.stack.d1(
+            "SELECT ro.ciphertext_digest FROM generation_object go JOIN generation g ON g.id = go.generation "
+            "JOIN remote_object ro ON ro.origin_host = g.origin_host AND ro.plaintext_digest = go.plaintext_digest "
+            "WHERE g.native_id = 'native-1' ORDER BY go.ordinal LIMIT 1", mode="first")
+        status, _headers, _body = self.stack.r2_delete("v1/o/" + row["ciphertext_digest"])
+        self.assertEqual(status, 200)
+        with self.assertRaises(mirror.MirrorError):
+            self.verify(objects=True)
+
+    def test_a_corrupted_snapshot_page_is_refused(self):
+        store = self.store()
+        self.capture(store, "native-1", "corrupted page marker")
+        self.sync(store)
+        snapshot = self.snapshots()[0]["id"]
+        status, _headers, _body = self.stack.r2_put("v1/s/origin-a/%s/0" % snapshot, b"corrupted page")
+        self.assertEqual(status, 200)
+        with self.assertRaises(mirror.MirrorError):
+            self.verify(objects=True)
+
+    def test_backoff_under_repeated_faults_is_bounded(self):
+        self.restart(("--fault-every", "2", "--fault-statuses", "429,500,503"))
+        store = self.store()
+        self.capture(store, "native-1", "backoff marker")
+        delays = []
+        result = self.sync(store, sleep=delays.append)
+        self.assertEqual(result["generations_committed"], 1)
+        self.assertGreater(len(delays), 0)
+        self.assertLessEqual(max(delays), 60)
+        self.assertTrue(all(delay >= 1 for delay in delays))
+
+    def test_a_client_restart_mid_sync_finishes(self):
+        self.restart(("--drop-request-path", "/api/v1/sync/objects/", "--drop-request-method", "PUT"))
+        store = self.store()
+        self.capture(store, "native-1", "client restart marker")
+        client = mirror.MirrorClient(
+            self.config, attempts=1,
+            factory=lambda: http.client.HTTPSConnection(
+                "127.0.0.1", self.stack.port, timeout=30, context=self.stack.tls),
+            sleep=self.no_sleep)
+        try:
+            with self.assertRaises(mirror.MirrorError):
+                mirror.sync(
+                    store, self.config, "cloudflare", client=client,
+                    upload_client_factory=lambda: mirror.MirrorClient(
+                        self.config, attempts=1,
+                        factory=lambda: http.client.HTTPSConnection(
+                            "127.0.0.1", self.stack.port, timeout=30, context=self.stack.tls),
+                        sleep=self.no_sleep),
+                    recipients=self.recipients, concurrency=1)
+        finally:
+            client.close()
+        result = self.sync(store, sleep=self.no_sleep)
+        self.assertEqual(result["generations_committed"], 1)
+        self.assertEqual(self.stack.d1("SELECT count(*) AS count FROM generation", mode="first")["count"], 1)
+        self.assertEqual(self.stack.d1(
+            "SELECT count(*) AS count FROM generation_object", mode="first")["count"], 1)
+        self.assertEqual(self.drops(), 1)
 
 
 class DevModeTests(unittest.TestCase):

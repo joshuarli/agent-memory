@@ -100,7 +100,7 @@ export async function createStack(options = {}) {
   if (options.collectorWorker === true) {
     const collector = JSON.parse(JSON.stringify(config));
     collector.name = `${config.name}-collectors`;
-    collector.manifest.mainModule = releaseMainModule;
+    collector.manifest.mainModule = options.harness === true ? "fault-entry.mjs" : releaseMainModule;
     delete collector.access;
     collectorName = collector.name;
     workers.push({ config: collector, dev: devOptions() });

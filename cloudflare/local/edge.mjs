@@ -89,6 +89,10 @@ export async function startEdge(options = {}) {
   const faultStatuses = options.faultStatuses ?? [429, 500];
   const dropRequestEvery = options.dropRequestEvery ?? 0;
   const dropResponseEvery = options.dropResponseEvery ?? 0;
+  const dropRequestPath = options.dropRequestPath ?? null;
+  const dropResponsePath = options.dropResponsePath ?? null;
+  const dropRequestMethod = options.dropRequestMethod ?? null;
+  const dropResponseMethod = options.dropResponseMethod ?? null;
   const release = loadReleaseConfig(options.configPath ?? WORKER_CONFIG_PATH);
   const domain = release.domains?.[0] ?? "memories.17166969.xyz";
   const { privateKey, publicKey } = generateKeyPairSync("rsa", { modulusLength: 2048 });
@@ -131,6 +135,8 @@ export async function startEdge(options = {}) {
   let drops = 0;
   let droppedRequests = 0;
   let droppedResponses = 0;
+  let droppedRequestPath = false;
+  let droppedResponsePath = false;
   const handler = async (request, response) => {
     try {
       const url = new URL(request.url ?? "/", "https://127.0.0.1");
@@ -157,6 +163,13 @@ export async function startEdge(options = {}) {
         const forwarded = workerRequest(request, url, await readBody(request), domain, {});
         return await relay(response, await stack.dispatchFetch(forwarded.url, forwarded.init));
       }
+      if (dropRequestPath !== null && !droppedRequestPath && url.pathname.startsWith(dropRequestPath)
+          && (dropRequestMethod === null || request.method === dropRequestMethod)) {
+        droppedRequestPath = true;
+        drops += 1;
+        request.socket.destroy();
+        return;
+      }
       if (dropRequestEvery > 0) {
         droppedRequests += 1;
         if (droppedRequests % dropRequestEvery === 0) {
@@ -176,6 +189,12 @@ export async function startEdge(options = {}) {
         }
       }
       let dropResponse = false;
+      if (dropResponsePath !== null && !droppedResponsePath && url.pathname.startsWith(dropResponsePath)
+          && (dropResponseMethod === null || request.method === dropResponseMethod)) {
+        droppedResponsePath = true;
+        dropResponse = true;
+        drops += 1;
+      }
       if (dropResponseEvery > 0) {
         droppedResponses += 1;
         if (droppedResponses % dropResponseEvery === 0) {

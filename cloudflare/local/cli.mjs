@@ -42,6 +42,10 @@ for (let index = 0; index < args.length; index += 1) {
   else if (argument === "--fault-statuses") options.faultStatuses = args[++index].split(",").map(Number);
   else if (argument === "--drop-request-every") options.dropRequestEvery = Number(args[++index]);
   else if (argument === "--drop-response-every") options.dropResponseEvery = Number(args[++index]);
+  else if (argument === "--drop-request-path") options.dropRequestPath = args[++index];
+  else if (argument === "--drop-response-path") options.dropResponsePath = args[++index];
+  else if (argument === "--drop-request-method") options.dropRequestMethod = args[++index];
+  else if (argument === "--drop-response-method") options.dropResponseMethod = args[++index];
   else if (argument === "--test-state") options.testState = true;
   else if (argument === "--d1-batch-fault-every") faults.d1_batch_every = Number(args[++index]);
   else if (argument === "--r2-put-fault-every") faults.r2_put_every = Number(args[++index]);
