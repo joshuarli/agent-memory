@@ -8,7 +8,7 @@ case "$mode" in
 	*) >&2 printf 'usage: perf.sh local|worker|deployed\n'; exit 2 ;;
 esac
 
-root=$(CDPATH='' cd -P -- "$(dirname -- "$0")/../.." && pwd)
+root=$(CDPATH='' cd -P -- "$(dirname -- "$0")/.." && pwd)
 repeats="${REPEATS:-5}"
 records="${RECORDS:-1000}"
 objects="${OBJECTS:-200}"
@@ -26,4 +26,4 @@ if [ -n "${SCENARIO:-}" ]; then
 fi
 cd "$root"
 TMPDIR="$tmp" exec uv run --no-project --python '>=3.15' python -I \
-	agent-memory/eval/bench_mirror.py "$@"
+	eval/bench_mirror.py "$@"

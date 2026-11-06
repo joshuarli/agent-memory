@@ -7,7 +7,7 @@ import { Miniflare } from "miniflare";
 import { BUNDLE_PATH } from "./harness.mjs";
 
 test("the built bundle boots and fails closed without Access", async (t) => {
-  assert.ok(existsSync(BUNDLE_PATH), "missing worker bundle; run `npm run build` in agent-memory/cloudflare");
+  assert.ok(existsSync(BUNDLE_PATH), "missing worker bundle; run `npm run build` in cloudflare/");
   const miniflare = new Miniflare({
     modules: true,
     modulesRules: [{ type: "ESModule", include: ["**/*.js"] }],

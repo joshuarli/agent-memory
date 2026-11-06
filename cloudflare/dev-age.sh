@@ -1,7 +1,7 @@
 #!/bin/sh
 set -eu
 
-root=$(CDPATH='' cd -P -- "$(dirname -- "$0")/../.." && pwd)
+root=$(CDPATH='' cd -P -- "$(dirname -- "$0")/.." && pwd)
 if command -v rage >/dev/null 2>&1; then
 	command -v rage
 	exit 0
@@ -13,10 +13,6 @@ fi
 bin="$root/.work/tools/rage/bin/rage"
 if [ -x "$bin" ]; then
 	printf '%s\n' "$bin"
-	exit 0
-fi
-if sh "$root/dl" rage >/dev/null 2>&1 && [ -x "${HOME}/.local/bin/rage" ]; then
-	printf '%s\n' "${HOME}/.local/bin/rage"
 	exit 0
 fi
 if ! command -v cargo >/dev/null 2>&1; then

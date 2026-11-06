@@ -9,13 +9,13 @@ function fail(message) {
   process.exit(2);
 }
 
-if (!existsSync(BUNDLE)) fail("missing worker bundle; run `npm run build` in agent-memory/cloudflare");
+if (!existsSync(BUNDLE)) fail("missing worker bundle; run `npm run build` in cloudflare/");
 
 let Miniflare;
 try {
   ({ Miniflare } = await import("miniflare"));
 } catch {
-  fail("worker bench dependencies are missing; run `npm ci` in agent-memory/cloudflare");
+  fail("worker bench dependencies are missing; run `npm ci` in cloudflare/");
 }
 
 const { seedDatabase } = await import("../bench/seed.mjs");

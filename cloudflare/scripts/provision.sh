@@ -2,8 +2,8 @@
 # Provision the usr-memories R2 bucket, D1 database, and Worker-level Access app.
 set -eu
 
-root=$(CDPATH='' cd -P -- "$(dirname -- "$0")/../../.." && pwd)
-worker="$root/agent-memory/cloudflare"
+worker=$(CDPATH='' cd -P -- "$(dirname -- "$0")/.." && pwd)
+root=$(CDPATH='' cd -P -- "$worker/.." && pwd)
 cf=${CF_BIN:-cf}
 dry_run=0
 access=0

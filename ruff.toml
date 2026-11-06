@@ -1,0 +1,7 @@
+target-version = "py315"
+extend-exclude = ["tests/fixtures/agent_session_store_v3.py"]
+force-exclude = true
+
+[lint]
+select = ["E4", "E7", "E9", "F", "B"]
+ignore = ["E701", "E702", "B905"]

@@ -2,8 +2,7 @@
 # Refuse to build or deploy when auth, migrations, or the config disagree.
 set -eu
 
-root=$(CDPATH='' cd -P -- "$(dirname -- "$0")/../../.." && pwd)
-worker="$root/agent-memory/cloudflare"
+worker=$(CDPATH='' cd -P -- "$(dirname -- "$0")/.." && pwd)
 cd "$worker"
 
 fail () {

@@ -3,8 +3,8 @@
 set -eu
 
 base=${MEMORIES_BASE:-https://memories.17166969.xyz}
-token_file=${MEMORIES_TOKEN_FILE:-.work/secrets/collector.token}
-root=$(CDPATH='' cd -P -- "$(dirname -- "$0")/../../.." && pwd)
+root=$(CDPATH='' cd -P -- "$(dirname -- "$0")/../.." && pwd)
+token_file=${MEMORIES_TOKEN_FILE:-$root/.work/secrets/collector.token}
 work="$root/.work/tmp"
 mkdir -p "$work"
 headers="$work/smoke-headers.$$"

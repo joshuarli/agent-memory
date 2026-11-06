@@ -7,7 +7,7 @@ export const BUNDLE_PATH = fileURLToPath(
 
 export async function loadWorker() {
   if (!existsSync(BUNDLE_PATH)) {
-    throw new Error("missing worker bundle; run `npm run build` in agent-memory/cloudflare");
+    throw new Error("missing worker bundle; run `npm run build` in cloudflare/");
   }
   const module = await import(pathToFileURL(BUNDLE_PATH).href);
   return module.default;
