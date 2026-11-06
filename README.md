@@ -1,6 +1,6 @@
 # Agent learning
 
-The `agent-learn` and `agent-sessions` launchers require Python 3.15 or newer. If `python3` is older, they use `uv` to select a compatible interpreter.
+The package provides three commands, `agent-learn`, `agent-sessions`, and `agent-sessions-serve`, and needs Python 3.15 or newer with no runtime dependencies. [Install](docs/install.md) covers environments and launchers, [operations](docs/operations.md) covers the Cloudflare Worker, and [cost](docs/cost.md) covers what the Worker spends. Repository checks are in [AGENTS.md](AGENTS.md).
 
 `agent-learn` keeps one local state directory at `~/.agent-sessions`, holding `sessions.sqlite3`, the archive, and an optional `config.json`. `AGENT_SESSIONS_STATE_DIR` overrides it and `--state-dir` overrides both. It holds three levels of knowledge, each with its own trust and cost boundary:
 
@@ -83,7 +83,7 @@ Every recall writes a receipt of what was returned, and `inspect` writes one for
 
 ## Hook and data boundaries
 
-The user-level Codex `Stop` hook runs `agent-learn hook`. It reads the event name and working directory and records a project-scoped hint for enabled projects. It does not read transcripts or run a model. `SubagentStop` events and sessions marked with `AGENT_LEARN_WORKER` create no hints. No harness injects memory on every turn; agents call `recall` through the [`do`](../dotfiles/base/.agents/skills/do/SKILL.md) skill's rule, and the result arrives late in the context as an ordinary tool result, which leaves the system prompt and its cache untouched. See [`config.toml`](../dotfiles/base/.codex/config.toml) for the hook, which Codex may ask you to trust.
+The user-level Codex `Stop` hook runs `agent-learn hook`. It reads the event name and working directory and records a project-scoped hint for enabled projects. It does not read transcripts or run a model. `SubagentStop` events and sessions marked with `AGENT_LEARN_WORKER` create no hints. No harness injects memory on every turn; agents call `recall` through the `do` skill's rule in the `usr` dotfiles, and the result arrives late in the context as an ordinary tool result, which leaves the system prompt and its cache untouched. The hook is configured in `usr`'s `dotfiles/base/.codex/config.toml`, and Codex may ask you to trust it.
 
 The store keeps local transcript indexes and learning records; it never copies original transcripts into Git. State directories use mode `0700`; database files use `0600`. Redaction is heuristic and can miss credentials or confidential text. Enabling a project or the wildcard allows bounded excerpts from eligible sessions to reach Codex. Review workers use isolated scratch directories, disabled tools and hooks, ignored user configuration, read-only sandboxing, and ephemeral sessions. These settings do not establish VM isolation or prevent every host read. `agent-learn doctor --probe-cli` runs an unpaid loopback diagnostic with synthetic input.
 
@@ -125,8 +125,7 @@ plaintext, compressed, and ciphertext bytes plus CPU per class; set `AGE_BIN` wh
 not on `PATH`. Ciphertext bytes live in the sample's `timings` because randomized age
 ciphertext length can vary by a few bytes, so they are measured, not used as a deterministic
 gate. `perf-worker` boots the built bundle with real Miniflare D1 and R2 and measures it over
-loopback HTTP; build it once with `npm run build` in
-`agent-memory/cloudflare` after `npm ci`. `perf-deployed` probes the production origin with
+loopback HTTP; build it once with `make worker-deps worker-bundle`. `perf-deployed` probes the production origin with
 the service token and records an observational run: it checks that an unauthenticated
 request is refused, reuses one keep-alive TLS connection after a warmup, and records wall
 time, client process CPU, response bytes, result counts, reconnects, and the Worker's
@@ -212,7 +211,7 @@ agent-sessions search 'codex-units' --central --kind user
 agent-sessions show 'cmd:ID@ORIGIN' --central
 ```
 
-The central host needs the receiver package (`agent-memory/src/agent_memory`) and a Python with stdlib `sqlite3`. It does not need the launchers, `uv`, or the learning extras: `python3 -m agent_memory.serve ingest --protocol 2 --origin ID STATE_DIR` is the whole server. Tested against Ubuntu 24.04 with Python 3.12.3; the launchers on a collector still require 3.15.
+The central host needs a copy of the receiver package (`src/agent_memory` from a checkout or the sdist) and a Python with stdlib `sqlite3`. It does not need the installed commands, `uv`, or the learning extras: `python3 -m agent_memory.serve ingest --protocol 2 --origin ID STATE_DIR` is the whole server. Tested against Ubuntu 24.04 with Python 3.12.3. The wheel itself requires 3.15, so install it only on collectors.
 
 The encrypted Cloudflare mirror is a second central transport. Its config block is
 `{"central": {"transport": "cloudflare", "url": "https://memories.17166969.xyz",
@@ -290,7 +289,7 @@ record set in one staged epoch; it leaves the journal for the next sync to snaps
 pruning. `mirror doctor` checks the config, token mode,
 identities, recipients, state, and remote reachability; `--offline` skips the remote check.
 
-Scheduling is explicit and never installed by sync. Render
+Scheduling is explicit and never installed by sync. Render `usr`'s
 `dotfiles/launchd/com.josh.agent-sessions-mirror.plist.in`, replacing `@@HOME@@`,
 `@@STATE_DIR@@`, and `@@REMOTE@@`, lint it with `plutil -lint`, and load it with
 `launchctl bootstrap gui/$(id -u) PLIST`. The portable equivalent is
@@ -312,7 +311,7 @@ For a local or offline run, point the same commands at a directory: `agent-sessi
 - Learning records travel as records, not databases. After the generations, a sync sends one snapshot of the collector's experiences and approved memories whose evidence is all local: original ids, kind, claim, applicability, evidence references (session, position, digest, role), supersession links, and lifecycle state including withdrawn, retired, and superseded. The central store keeps them in separate `learning_import_*` tables keyed by origin and original id, with the evidence sessions rewritten to their central ids so `show --central` verifies them. A snapshot replaces that origin's previous one atomically, so a record deleted at the collector disappears centrally. Imported records are advisory: they never enter the local learning tables, are never promoted, and `agent-sessions memory` labels them as not an instruction. A snapshot is refused for an unknown kind or state, a bad digest, or a repeated record, and a record citing a tombstoned session is dropped. Forgetting a session also deletes every imported record that cites it. The snapshot is re-sent only when its digest changes; `doctor --json` reports `learning_synced`. Restoring records onto a replacement collector is not implemented.
 - A collector declares one origin identity, a random persisted id, never a hostname or a hardware id. `agent-sessions identity regenerate` mints a new one and leaves recorded origins alone. The same native id from two origins is two sessions; a copied history is not independent evidence.
 
-Optional scheduling is explicit and never installed by sync: `dotfiles/launchd/com.josh.agent-sessions-sync.plist.in` for macOS, or a cron entry such as `*/15 * * * * agent-sessions sync --to central`. Overlapping runs exit immediately with `overlapped=1`. Missed runs are recovered by the next one; a hook hint is optional and never blocks a session on network access.
+Optional scheduling is explicit and never installed by sync: `usr`'s `dotfiles/launchd/com.josh.agent-sessions-sync.plist.in` for macOS, or a cron entry such as `*/15 * * * * agent-sessions sync --to central`. Overlapping runs exit immediately with `overlapped=1`. Missed runs are recovered by the next one; a hook hint is optional and never blocks a session on network access.
 
 ## Backup, restore, and recovery
 
@@ -352,14 +351,14 @@ Project memories are stored exactly as reviewed, at most 600 characters of actio
 All evaluation is offline unless a command says otherwise.
 
 ```sh
-uv run --no-project --python '>=3.15' python -I agent-memory/eval/bench_recall.py validate
-TMPDIR="$PWD/.work/tmp" uv run --no-project --python '>=3.15' python -I agent-memory/eval/bench_recall.py run --split dev
-TMPDIR="$PWD/.work/tmp" uv run --no-project --python '>=3.15' python -I agent-memory/eval/bench_recall.py run --split heldout --haystack 150 --detail
+uv run --no-project --python '>=3.15' python -I eval/bench_recall.py validate
+TMPDIR="$PWD/.work/tmp" uv run --no-project --python '>=3.15' python -I eval/bench_recall.py run --split dev
+TMPDIR="$PWD/.work/tmp" uv run --no-project --python '>=3.15' python -I eval/bench_recall.py run --split heldout --haystack 150 --detail
 ```
 
 The benchmark renders synthetic multi-project episodes into real Git repositories, worktrees, and transcripts in all four harness formats, indexes them, captures experience, installs approved memories, applies source edits, and scores recall against labeled episodes. `--system` selects the legacy word-overlap recall, plain FTS5 search, or the new pipeline. `--haystack N` adds N synthetic routine sessions per project. The `dev` split is for tuning. The `heldout` split was written independently and was not used to choose any parameter. `explain CASE` shows why one case passed or failed.
 
-`agent-memory/eval/live_recall.py --live` compares a no-memory baseline, a retrieved-experience treatment, and an unrelated-task control with native Codex runs and scores the commands the agent ran, not its prose. It makes paid model calls and refuses to run without `--live`. Its offline tests are `agent-memory/eval/test_live_recall.py`.
+`eval/live_recall.py --live` compares a no-memory baseline, a retrieved-experience treatment, and an unrelated-task control with native Codex runs and scores the commands the agent ran, not its prose. It makes paid model calls and refuses to run without `--live`. It reads the shipped recall rule and review tiers from the `usr` checkout named by `AGENT_MEMORY_USR_ROOT` (default `~/usr`). Its offline tests are `eval/test_live_recall.py`.
 
 ### Measured results
 
@@ -392,7 +391,7 @@ Rejected as not paying for themselves on `dev`: a static software-synonym lexico
 
 A real first backfill of 1,284 sessions (3.35 GB of transcript) transferred 1.25 GB on the wire, a 2.67x reduction, and took 13 minutes against a Linux host over Tailscale. An unchanged re-sync then delivered only the sessions captured since. Archive capture on the same 200-session corpus: a fresh index reads 978,980 bytes and writes 200 non-empty transcripts as generations; an unchanged refresh reads 0 content bytes and changes nothing; a one-line append reads the changed file once end to end and writes only the new chunk. On a 4.19 MB log a one-line append wrote 160 bytes, against 4,194,765 bytes for the previous in-place copy, and kept both generations. These are work counts, not timings: `perf-gate-ready` was closed throughout because the host was busy, so no timing below is perf-gated.
 
-Latency on the synthetic corpora is about 20 ms per answered query in process (26 ms with the haystack). On a private index of 841,000 events (471 real sessions, 1.0 GB, built in about 60 seconds, never committed), warm queries ran at about 40 to 50 ms with a maximum near 120 ms. These timings were taken under ordinary desktop load and are not perf-gate certified. Unchanged incremental indexing does the same I/O as the previous release for Codex transcripts (the benchmark's gated CPU median for 1,000 unchanged sessions is 30 ms). `agent-memory/eval/bench_sessions.py --baseline-ref REV` reproduces the comparison.
+Latency on the synthetic corpora is about 20 ms per answered query in process (26 ms with the haystack). On a private index of 841,000 events (471 real sessions, 1.0 GB, built in about 60 seconds, never committed), warm queries ran at about 40 to 50 ms with a maximum near 120 ms. These timings were taken under ordinary desktop load and are not perf-gate certified. Unchanged incremental indexing does the same I/O as the previous release for Codex transcripts (the benchmark's gated CPU median for 1,000 unchanged sessions is 30 ms). `eval/bench_sessions.py --baseline-file PATH` reproduces the comparison against an earlier store module.
 
 ### Not established
 
