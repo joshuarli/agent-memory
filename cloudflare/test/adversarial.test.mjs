@@ -3,8 +3,7 @@ import { createHash } from "node:crypto";
 import { createServer } from "node:http";
 import { after, before, test } from "node:test";
 
-import { Miniflare } from "miniflare";
-
+import { createStack } from "../local/stack.mjs";
 import { seedDatabase } from "../bench/seed.mjs";
 import { MAX_JSON_BYTES, MAX_OBJECT_BYTES } from "../src/protocol.ts";
 import { loadWorker } from "./harness.mjs";
@@ -17,7 +16,7 @@ const ORIGIN = "adversarial-a";
 const OTHER_ORIGIN = "adversarial-b";
 const MAX_JSON = MAX_JSON_BYTES;
 
-let miniflare;
+let stack;
 let db;
 let bucket;
 let env;
@@ -25,28 +24,20 @@ let server;
 let base;
 
 before(async () => {
-  miniflare = new Miniflare({
-    modules: true,
-    script: "export default { fetch() { return new Response('ok'); } }",
-    compatibilityDate: "2026-08-06",
-    d1Databases: ["DB"],
-    r2Buckets: ["BUCKET"],
+  stack = await createStack({
+    readers: READER,
+    teamDomain: "team.example.test",
+    audience: "test-audience",
   });
-  db = await miniflare.getD1Database("DB");
-  bucket = await miniflare.getR2Bucket("BUCKET");
+  db = await stack.d1();
+  bucket = await stack.r2();
   await seedDatabase(db);
   const insert = db.prepare(
     "INSERT INTO collector(service_token_id, origin_host, label, created_at, disabled) VALUES(?, ?, ?, ?, 0)",
   );
   await insert.bind(COLLECTOR, ORIGIN, "adversarial", 0).run();
   await insert.bind(OTHER, OTHER_ORIGIN, "adversarial", 0).run();
-  env = {
-    READERS: READER,
-    ACCESS_TEAM_DOMAIN: "team.example.test",
-    ACCESS_AUD: "test-audience",
-    DB: db,
-    BUCKET: bucket,
-  };
+  env = await stack.env();
   server = createServer(async (request, response) => {
     try {
       const chunks = [];
@@ -78,7 +69,7 @@ before(async () => {
 
 after(async () => {
   await new Promise((resolve) => server.close(resolve));
-  await miniflare.dispose();
+  await stack.dispose();
 });
 
 function digest(value) {

@@ -5,7 +5,7 @@
   "scripts": {
     "build": "node scripts/build.mjs",
     "check": "tsrs -p tsconfig.json --noEmit --fast",
-    "lint": "oxlint src test",
+    "lint": "oxlint src test local",
     "test": "node --test test/*.test.mjs",
     "test:runtime": "node --test test/runtime.test.mjs",
     "test:protocol": "node --test test/protocol.test.mjs"
@@ -16,7 +16,7 @@
     "@modelcontextprotocol/client": "2.4.0",
     "cf": "1.0.0-beta.26",
     "esbuild": "0.28.2",
-    "miniflare": "4.20260730.0",
+    "miniflare": "5.20261104.0-beta",
     "oxlint": "1.90.0",
     "tsrs": "0.20.1-ts7.1.0-beta"
   },

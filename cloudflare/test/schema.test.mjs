@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
 
-import { Miniflare } from "miniflare";
+import { createStack } from "../local/stack.mjs";
 
 const MIGRATION = new URL("../migrations/0001_init.sql", import.meta.url);
 const TABLES = [
@@ -22,14 +22,9 @@ async function apply(db, sql) {
 }
 
 async function database(t) {
-  const miniflare = new Miniflare({
-    modules: true,
-    script: "export default { fetch() { return new Response('ok'); } };",
-    compatibilityDate: "2026-08-06",
-    d1Databases: ["DB"],
-  });
-  t.after(() => miniflare.dispose());
-  const db = await miniflare.getD1Database("DB");
+  const stack = await createStack();
+  t.after(() => stack.dispose());
+  const db = await stack.d1();
   await apply(db, readFileSync(MIGRATION, "utf8"));
   return db;
 }

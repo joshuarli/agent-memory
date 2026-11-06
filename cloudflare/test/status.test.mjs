@@ -4,8 +4,7 @@ import { readFileSync, readdirSync } from "node:fs";
 import { dirname, join } from "node:path";
 import test from "node:test";
 
-import { Miniflare } from "miniflare";
-
+import { createStack } from "../local/stack.mjs";
 import { seedDatabase } from "../bench/seed.mjs";
 import { BUNDLE_PATH, context, environment, loadWorker, request } from "./harness.mjs";
 
@@ -82,15 +81,13 @@ test("a bound collector token reads status for its origin", async () => {
 });
 
 async function database(t) {
-  const miniflare = new Miniflare({
-    modules: true,
-    script: "export default { fetch() { return new Response('ok'); } }",
-    compatibilityDate: "2026-08-06",
-    d1Databases: ["DB"],
-    r2Buckets: ["BUCKET"],
+  const stack = await createStack({
+    readers: "reader@example.test",
+    teamDomain: "team.example.test",
+    audience: "test-audience",
   });
-  t.after(() => miniflare.dispose());
-  const db = await miniflare.getD1Database("DB");
+  t.after(() => stack.dispose());
+  const db = await stack.d1();
   await seedDatabase(db);
   const calls = { prepare: 0 };
   const binding = new Proxy(db, {
@@ -108,13 +105,7 @@ async function database(t) {
   return {
     db,
     calls,
-    env: {
-      READERS: "reader@example.test",
-      ACCESS_TEAM_DOMAIN: "team.example.test",
-      ACCESS_AUD: "test-audience",
-      DB: binding,
-      BUCKET: await miniflare.getR2Bucket("BUCKET"),
-    },
+    env: { ...await stack.env(), DB: binding },
   };
 }
 

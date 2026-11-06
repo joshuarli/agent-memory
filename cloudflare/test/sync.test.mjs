@@ -2,8 +2,7 @@ import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import test from "node:test";
 
-import { Miniflare } from "miniflare";
-
+import { createStack } from "../local/stack.mjs";
 import { seedDatabase } from "../bench/seed.mjs";
 import { loadWorker, request } from "./harness.mjs";
 import { MAX_CIPHERTEXT_BYTES, MAX_JSON_BYTES, MAX_OBJECT_BYTES } from "../src/protocol.ts";
@@ -19,15 +18,13 @@ function digest(bytes) {
 }
 
 async function runtime(t) {
-  const miniflare = new Miniflare({
-    modules: true,
-    script: "export default { fetch() { return new Response('ok'); } }",
-    compatibilityDate: "2026-08-06",
-    d1Databases: ["DB"],
-    r2Buckets: ["BUCKET"],
+  const stack = await createStack({
+    readers: "reader@example.test",
+    teamDomain: "team.example.test",
+    audience: "test-audience",
   });
-  t.after(() => miniflare.dispose());
-  const db = await miniflare.getD1Database("DB");
+  t.after(() => stack.dispose());
+  const db = await stack.d1();
   await seedDatabase(db);
   const collector = db.prepare(
     "INSERT INTO collector(service_token_id, origin_host, label, created_at, disabled) VALUES(?, ?, ?, ?, 0)",
@@ -36,14 +33,8 @@ async function runtime(t) {
   await collector.bind(OTHER_COLLECTOR, OTHER_ORIGIN, "test", 0).run();
   return {
     db,
-    bucket: await miniflare.getR2Bucket("BUCKET"),
-    env: {
-      READERS: "reader@example.test",
-      ACCESS_TEAM_DOMAIN: "team.example.test",
-      ACCESS_AUD: "test-audience",
-      DB: db,
-      BUCKET: await miniflare.getR2Bucket("BUCKET"),
-    },
+    bucket: await stack.r2(),
+    env: await stack.env(),
   };
 }
 

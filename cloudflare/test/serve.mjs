@@ -11,21 +11,13 @@ function fail(message) {
 
 if (!existsSync(BUNDLE)) fail("missing worker bundle; run `npm run build` in cloudflare/");
 
-let Miniflare;
-try {
-  ({ Miniflare } = await import("miniflare"));
-} catch {
-  fail("worker bench dependencies are missing; run `npm ci` in cloudflare/");
-}
-
+const { createStack } = await import("../local/stack.mjs");
 const { seedDatabase } = await import("../bench/seed.mjs");
 
-const miniflare = new Miniflare({
-  modules: true,
-  script: "export default { fetch() { return new Response('worker bench placeholder'); } };",
-  compatibilityDate: "2026-08-06",
-  d1Databases: ["DB"],
-  r2Buckets: ["BUCKET"],
+const stack = await createStack({
+  readers: READER,
+  teamDomain: "team.example.test",
+  audience: "test-audience",
 });
 
 const counters = new Map();
@@ -65,12 +57,12 @@ function countedBinding(binding, label) {
   });
 }
 
-const db = await miniflare.getD1Database("DB");
+const db = await stack.d1();
 await seedDatabase(db);
 const env = {
   READERS: READER,
   DB: countedBinding(db, "d1"),
-  BUCKET: countedBinding(await miniflare.getR2Bucket("BUCKET"), "r2"),
+  BUCKET: countedBinding(await stack.r2(), "r2"),
 };
 
 const { default: worker } = await import(BUNDLE.href);
@@ -208,7 +200,7 @@ server.listen(0, "127.0.0.1", () => {
 
 async function shutdown() {
   server.close();
-  await miniflare.dispose();
+  await stack.dispose();
   process.exit(0);
 }
 
