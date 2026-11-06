@@ -2,7 +2,7 @@ import { readFileSync, readdirSync } from "node:fs";
 
 const MIGRATIONS = new URL("../migrations/", import.meta.url);
 
-function statements(sql) {
+export function statements(sql) {
   const result = [];
   let current = "";
   let inTrigger = false;

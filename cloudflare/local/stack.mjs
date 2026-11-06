@@ -149,6 +149,7 @@ export async function createStack(options = {}) {
     runtimeOptions,
     devOptions: workers[0].dev,
     collectorName,
+    keepState: options.keepState === true,
   });
 }
 
@@ -162,11 +163,12 @@ class LocalStack {
   #runtimeOptions;
   #devOptions;
   #collectorName;
+  #keepState;
   #disposed = false;
   #d1;
   #r2;
 
-  constructor({ miniflare, stateDir, config, logs, outbound, allowOutbound, runtimeOptions, devOptions, collectorName }) {
+  constructor({ miniflare, stateDir, config, logs, outbound, allowOutbound, runtimeOptions, devOptions, collectorName, keepState }) {
     this.#miniflare = miniflare;
     this.#stateDir = stateDir;
     this.#config = config;
@@ -176,6 +178,7 @@ class LocalStack {
     this.#runtimeOptions = runtimeOptions;
     this.#devOptions = devOptions;
     this.#collectorName = collectorName;
+    this.#keepState = keepState;
   }
 
   get stateDir() {
@@ -248,6 +251,6 @@ class LocalStack {
       writeFailure(this.#stateDir, this.#logs, "unexpected outbound request");
       throw new Error(`local stack: unexpected outbound request: ${unexpected.join(", ")}`);
     }
-    rmSync(this.#stateDir, { recursive: true, force: true });
+    if (!this.#keepState) rmSync(this.#stateDir, { recursive: true, force: true });
   }
 }

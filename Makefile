@@ -19,7 +19,7 @@ TYPED_PYTHON := src/agent_memory eval/bench_mirror.py tests/testkit.py
 GIT_TEMPLATE_DIR ?= $(wildcard /opt/homebrew/share/git-core/templates)
 ENV_GIT := $(if $(GIT_TEMPLATE_DIR),GIT_TEMPLATE_DIR=$(GIT_TEMPLATE_DIR))
 
-.PHONY: help test test-python lint dist worker-deps worker-bundle worker-test worker-check deploy smoke-deployed migrate-local migrations-production migrate-production provision provision-access observe perf-local perf-worker perf-deployed perf-report
+.PHONY: help test test-python lint dist worker-deps worker-bundle worker-test worker-check deploy smoke-deployed migrate-local migrations-check migrations-production migrate-production provision provision-access observe perf-local perf-worker perf-deployed perf-report
 
 help: ## List targets
 	@awk 'BEGIN {FS = ":.*## "} /^[a-z][a-z0-9.-]*:.*## / {printf "%-22s %s\n", $$1, $$2}' $(MAKEFILE_LIST) | sort
@@ -71,6 +71,9 @@ migrate-local: ## Apply D1 migrations to the local simulation state
 	@[ -n "$(DATABASE_ID)" ] || { >&2 printf 'migrate-local: cloudflare.config.ts has no D1 database id\n'; exit 1; }
 	@mkdir -p "$(LOCAL_STATE)"
 	cd $(WORKER_DIR) && $(CF) d1 migrations apply $(DATABASE_ID) --local --persist-to "$(LOCAL_STATE)"
+
+migrations-check: ## Fail when an applied migration was edited
+	sh $(WORKER_DIR)/scripts/check-migrations.sh
 
 migrations-production: ## List pending production D1 migrations (remote, read-only)
 	@[ -n "$(DATABASE_ID)" ] || { >&2 printf 'migrations-production: cloudflare.config.ts has no D1 database id\n'; exit 1; }
