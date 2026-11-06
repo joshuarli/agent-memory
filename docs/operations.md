@@ -41,7 +41,7 @@ Rolling back the Worker (`cf` or the dashboard) restores code only. D1 rows, R2 
 
 ## Remote MCP
 
-The Worker exposes a stateless Streamable HTTP endpoint at `https://memories.17166969.xyz/mcp` after the MCP-enabled build is deployed. Cloudflare Access and the Worker's existing principal checks apply to every request. A collector can read only its bound origin. A reader can read all origins. Requests with a different host or a present, different Origin are refused. Native clients can omit Origin.
+The Worker exposes a stateless Streamable HTTP endpoint at `https://memories.17166969.xyz/mcp`. Cloudflare Access and the Worker's existing principal checks apply to every request. A collector can read only its bound origin. A reader can read all origins. Requests with a different host or a present, different Origin are refused. Native clients can omit Origin.
 
 The endpoint offers these read-only tools:
 
@@ -62,3 +62,5 @@ env_http_headers = { "CF-Access-Client-Id" = "MEMORIES_ACCESS_CLIENT_ID", "CF-Ac
 ```
 
 Set both variables in the Codex process environment using the existing collector credential. Do not put their values in the configuration or a repository. This grants the collector's origin scope, not reader access. Clients that support only OAuth cannot use this service-token flow without a separately designed Access integration. See the [Codex configuration reference](https://developers.openai.com/codex/config-reference/) for HTTP header settings.
+
+The official SDK adds a measurable module-graph cost: the pre-MCP upload was 196.50 KiB (36.36 KiB gzip) and the MCP build is 527.79 KiB (125.19 KiB gzip). Local Miniflare cold start grew from a 74.5 ms median to 124.7 ms across five alternating samples. The REST status and search paths kept identical D1 operation counts. `memory_search` and `memory_inspect` call the same scoped operations and add no D1 work; `server_status` uses the existing status readers. This is the cost of the official handler, not a reason to enable streaming or stateful sessions.
