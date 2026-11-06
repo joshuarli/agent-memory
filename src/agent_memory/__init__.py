@@ -6,3 +6,5 @@ Submodules keep their historic names in shortened form:
 (review pipeline), ``learning_ops`` / ``learning_promote`` /
 ``learning_review`` (scheduling, promotion, model review).
 """
+
+DOCUMENTATION = "README.md in the agent-memory source repository"

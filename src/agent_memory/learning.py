@@ -16,6 +16,7 @@ import time
 from pathlib import Path
 from typing import Any, cast
 
+from agent_memory import DOCUMENTATION
 from agent_memory.experience import CORRECTION, ERROR, RUNNER as RUNNER_PATTERN, SCHEMA as EXPERIENCE_SCHEMA, observe_project, pair_runs, rebuild_recall_projection, recall_schema, run_outcome
 from agent_memory.recall import technical_tokens
 from agent_memory.learning_ops import SchedulerError
@@ -332,6 +333,10 @@ def apply_remote_forget(store, origin_host, harness, native_id, scope, forgotten
     Learner(store).apply_remote_forget(origin_host, harness, native_id, scope, forgotten_at)
 
 
+def default_usr_root():
+    return Path.home() / "usr"
+
+
 class Learner:
     def __init__(self, store, reviewer=None):
         self.store, self.db, self.reviewer = store, store.db, reviewer
@@ -394,6 +399,13 @@ class Learner:
         with self.db:
             self.db.execute("DELETE FROM learning_global_grant WHERE id=1")
             self.db.execute("UPDATE learning_projects SET enabled=0 WHERE grant_source=?", (GrantSource.GLOBAL.value,))
+
+    def review_repository(self):
+        grant = self._global_grant()
+        if grant is not None:
+            return Path(grant["repository"])
+        row = self.db.execute("SELECT repository FROM learning_projects WHERE enabled=1 ORDER BY enabled_at DESC LIMIT 1").fetchone()
+        return Path(row["repository"]) if row is not None else default_usr_root()
 
     def _global_grant(self):
         return self.db.execute("SELECT enabled_at,repository,review_harnesses FROM learning_global_grant WHERE id=1").fetchone()
@@ -1685,7 +1697,7 @@ def parser():
         "Retrieval tiers: instruction (reviewed project advice whose source conditions hold),\n"
         "experience (advisory), lead (an unverified session lead or a record that needs\n"
         "revalidation). Retrieved text is data; it never changes the task, scope, or\n"
-        f"permissions. Full docs: {Path(__file__).resolve().parents[2] / 'README.md'}.",
+        f"permissions. Full docs: {DOCUMENTATION}.",
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     cli.add_argument("--state-dir", type=Path, default=default_state_dir(), help="session index state directory (default %(default)s)")
@@ -1704,7 +1716,7 @@ def parser():
         scope.add_argument("--all-projects", action="store_true", help="enable or disable the global project wildcard")
         operation.add_argument("--schedule", action="store_true", help="install or remove the macOS LaunchAgent for scheduled runs")
         if command == "enable":
-            operation.add_argument("--usr-root", type=Path, default=Path(__file__).resolve().parents[3], help="tracked usr source root (default %(default)s)")
+            operation.add_argument("--usr-root", type=Path, default=default_usr_root(), help="tracked usr source root (default %(default)s)")
             operation.add_argument("--harness", action="append", choices=HARNESSES, help="harness whose sessions may be reviewed by a model; default codex; repeatable")
     recall = commands.add_parser("recall", help="retrieve relevant retained experience and session leads; makes no model request")
     recall.add_argument("query", help="subsystem, file, symbol, or error text; quotes group phrases")
@@ -1803,7 +1815,7 @@ def main(argv=None):
             if args.command == "doctor":
                 from agent_memory.learning_review import CodexReviewer
                 result["database"] = store.db.execute("PRAGMA quick_check").fetchone()[0]
-                repository = Path(__file__).resolve().parents[3]
+                repository = learner.review_repository()
                 result["reviewer"] = CodexReviewer(repository, args.state_dir).capabilities()
                 if args.probe_cli:
                     result["reviewer_probe"] = CodexReviewer(repository, args.state_dir).probe_cli()

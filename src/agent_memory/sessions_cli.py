@@ -12,6 +12,7 @@ import time
 from pathlib import Path
 from typing import Any
 
+from agent_memory import DOCUMENTATION
 from agent_memory import archive as archive_module
 from agent_memory import backup as backup_module
 from agent_memory import learning_sync
@@ -980,10 +981,6 @@ def _refresh(args):
         return 1
 
 
-def _readme_path():
-    return Path(__file__).resolve().parents[2] / "README.md"
-
-
 def parser():
     result = argparse.ArgumentParser(
         prog="agent-sessions",
@@ -998,7 +995,7 @@ def parser():
         "unquoted; quoting still forces an exact phrase and AND/OR still combine terms.\n"
         "Use --kind user to find your own prompts, --all-projects to leave the current\n"
         "repository, and --regex only for pattern matching.\n"
-        f"Full docs: {_readme_path()}.",
+        f"Full docs: {DOCUMENTATION}.",
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     commands = result.add_subparsers(dest="command", metavar="command")
