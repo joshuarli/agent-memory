@@ -1,0 +1,11 @@
+[project]
+name = "agent-memory"
+version = "0.1.0"
+description = "Local agent session memory: transcript indexing, retrieval, and review"
+readme = "README.md"
+requires-python = ">=3.15"
+dependencies = []
+
+[tool.pytest.ini_options]
+python_files = ["test_*.py"]
+addopts = "-p no:cacheprovider"

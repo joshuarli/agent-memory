@@ -1,0 +1,883 @@
+{
+  "cases": [
+    {
+      "change": {
+        "applies_when": "Reproducing failing tests in this repository.",
+        "basis": "deterministic",
+        "captured_at": 1700000001.25,
+        "claim": "Use the repository test driver when reproducing failures.",
+        "detector": "user-correction",
+        "digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "fingerprint": "sha256:test-driver",
+        "id": 7,
+        "identifiers": "test-driver",
+        "kind": "method",
+        "links": [
+          {
+            "older": 3,
+            "relation": "supersedes"
+          }
+        ],
+        "observed_at": 1700000000.5,
+        "project_key": "0123456789abcdef",
+        "project_label": "usr",
+        "record": "experience",
+        "revision": null,
+        "sources": [
+          {
+            "digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "position": 3,
+            "role": "trigger",
+            "session": "codex:native-1@origin-a"
+          },
+          {
+            "digest": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+            "position": 0,
+            "role": "outcome",
+            "session": "claude:native-2@origin-a"
+          }
+        ],
+        "state": "retained",
+        "state_at": null,
+        "state_reason": null,
+        "tags": "tests",
+        "validity": "[]",
+        "worktree": null
+      },
+      "name": "experience",
+      "valid": true
+    },
+    {
+      "change": {
+        "action": "Reproduce the failing test before changing the implementation.",
+        "applicability": "Any repository with a failing test.",
+        "created_at": 1700000002.75,
+        "digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "id": 9,
+        "links": [],
+        "project_key": "fedcba9876543210",
+        "record": "memory",
+        "revision": "abc123",
+        "sources": [
+          {
+            "digest": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+            "position": 4,
+            "role": "signal",
+            "session": "codex:native-3@origin-a"
+          }
+        ],
+        "state": "approved",
+        "validity": "[]"
+      },
+      "name": "memory",
+      "valid": true
+    },
+    {
+      "change": {
+        "deleted": true,
+        "id": 11,
+        "record": "experience"
+      },
+      "name": "deletion",
+      "valid": true
+    },
+    {
+      "change": {
+        "applies_when": "Reproducing failing tests in this repository.",
+        "basis": "deterministic",
+        "captured_at": 1700000001.25,
+        "claim": "Use the repository test driver when reproducing failures.",
+        "detector": "user-correction",
+        "digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "fingerprint": "sha256:test-driver",
+        "id": 7,
+        "identifiers": "test-driver",
+        "kind": "method",
+        "links": [
+          {
+            "older": 3,
+            "relation": "supersedes"
+          }
+        ],
+        "observed_at": 1700000000.5,
+        "project_key": "0123456789abcdef",
+        "record": "experience",
+        "revision": null,
+        "sources": [
+          {
+            "digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "position": 3,
+            "role": "trigger",
+            "session": "codex:native-1@origin-a"
+          },
+          {
+            "digest": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+            "position": 0,
+            "role": "outcome",
+            "session": "claude:native-2@origin-a"
+          }
+        ],
+        "state": "retained",
+        "state_at": null,
+        "state_reason": null,
+        "tags": "tests",
+        "validity": "[]",
+        "worktree": null
+      },
+      "name": "experience-without-label",
+      "valid": true
+    },
+    {
+      "change": {
+        "applies_when": "Reproducing failing tests in this repository.",
+        "basis": "deterministic",
+        "captured_at": 1700000001.25,
+        "claim": "Use the repository test driver when reproducing failures.",
+        "detector": "user-correction",
+        "digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "extra": "x",
+        "fingerprint": "sha256:test-driver",
+        "id": 7,
+        "identifiers": "test-driver",
+        "kind": "method",
+        "links": [
+          {
+            "older": 3,
+            "relation": "supersedes"
+          }
+        ],
+        "observed_at": 1700000000.5,
+        "project_key": "0123456789abcdef",
+        "project_label": "usr",
+        "record": "experience",
+        "revision": null,
+        "sources": [
+          {
+            "digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "position": 3,
+            "role": "trigger",
+            "session": "codex:native-1@origin-a"
+          },
+          {
+            "digest": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+            "position": 0,
+            "role": "outcome",
+            "session": "claude:native-2@origin-a"
+          }
+        ],
+        "state": "retained",
+        "state_at": null,
+        "state_reason": null,
+        "tags": "tests",
+        "validity": "[]",
+        "worktree": null
+      },
+      "name": "unknown-field",
+      "valid": false
+    },
+    {
+      "change": {
+        "applies_when": "Reproducing failing tests in this repository.",
+        "basis": "deterministic",
+        "captured_at": 1700000001.25,
+        "claim": "Use the repository test driver when reproducing failures.",
+        "detector": "user-correction",
+        "digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "fingerprint": "sha256:test-driver",
+        "id": 7,
+        "identifiers": "test-driver",
+        "kind": "method",
+        "links": [
+          {
+            "older": 3,
+            "relation": "supersedes"
+          }
+        ],
+        "observed_at": 1700000000.5,
+        "project_key": "0123456789abcdef",
+        "project_label": "usr",
+        "record": "experience",
+        "revision": null,
+        "sources": [
+          {
+            "digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "extra": "x",
+            "position": 3,
+            "role": "trigger",
+            "session": "codex:native-1@origin-a"
+          }
+        ],
+        "state": "retained",
+        "state_at": null,
+        "state_reason": null,
+        "tags": "tests",
+        "validity": "[]",
+        "worktree": null
+      },
+      "name": "unknown-nested-source-field",
+      "valid": false
+    },
+    {
+      "change": {
+        "applies_when": "Reproducing failing tests in this repository.",
+        "basis": "deterministic",
+        "captured_at": 1700000001.25,
+        "claim": "Use the repository test driver when reproducing failures.",
+        "detector": "user-correction",
+        "digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "fingerprint": "sha256:test-driver",
+        "id": 7,
+        "identifiers": "test-driver",
+        "kind": "method",
+        "links": [
+          {
+            "extra": 1,
+            "older": 3,
+            "relation": "supersedes"
+          }
+        ],
+        "observed_at": 1700000000.5,
+        "project_key": "0123456789abcdef",
+        "project_label": "usr",
+        "record": "experience",
+        "revision": null,
+        "sources": [
+          {
+            "digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "position": 3,
+            "role": "trigger",
+            "session": "codex:native-1@origin-a"
+          },
+          {
+            "digest": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+            "position": 0,
+            "role": "outcome",
+            "session": "claude:native-2@origin-a"
+          }
+        ],
+        "state": "retained",
+        "state_at": null,
+        "state_reason": null,
+        "tags": "tests",
+        "validity": "[]",
+        "worktree": null
+      },
+      "name": "unknown-nested-link-field",
+      "valid": false
+    },
+    {
+      "change": {
+        "applies_when": "Reproducing failing tests in this repository.",
+        "basis": "deterministic",
+        "captured_at": 1700000001.25,
+        "claim": "Use the repository test driver when reproducing failures.",
+        "detector": "user-correction",
+        "digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "fingerprint": "sha256:test-driver",
+        "id": 7,
+        "identifiers": "test-driver",
+        "kind": "hunch",
+        "links": [
+          {
+            "older": 3,
+            "relation": "supersedes"
+          }
+        ],
+        "observed_at": 1700000000.5,
+        "project_key": "0123456789abcdef",
+        "project_label": "usr",
+        "record": "experience",
+        "revision": null,
+        "sources": [
+          {
+            "digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "position": 3,
+            "role": "trigger",
+            "session": "codex:native-1@origin-a"
+          },
+          {
+            "digest": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+            "position": 0,
+            "role": "outcome",
+            "session": "claude:native-2@origin-a"
+          }
+        ],
+        "state": "retained",
+        "state_at": null,
+        "state_reason": null,
+        "tags": "tests",
+        "validity": "[]",
+        "worktree": null
+      },
+      "name": "bad-experience-kind",
+      "valid": false
+    },
+    {
+      "change": {
+        "applies_when": "Reproducing failing tests in this repository.",
+        "basis": "guess",
+        "captured_at": 1700000001.25,
+        "claim": "Use the repository test driver when reproducing failures.",
+        "detector": "user-correction",
+        "digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "fingerprint": "sha256:test-driver",
+        "id": 7,
+        "identifiers": "test-driver",
+        "kind": "method",
+        "links": [
+          {
+            "older": 3,
+            "relation": "supersedes"
+          }
+        ],
+        "observed_at": 1700000000.5,
+        "project_key": "0123456789abcdef",
+        "project_label": "usr",
+        "record": "experience",
+        "revision": null,
+        "sources": [
+          {
+            "digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "position": 3,
+            "role": "trigger",
+            "session": "codex:native-1@origin-a"
+          },
+          {
+            "digest": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+            "position": 0,
+            "role": "outcome",
+            "session": "claude:native-2@origin-a"
+          }
+        ],
+        "state": "retained",
+        "state_at": null,
+        "state_reason": null,
+        "tags": "tests",
+        "validity": "[]",
+        "worktree": null
+      },
+      "name": "bad-experience-basis",
+      "valid": false
+    },
+    {
+      "change": {
+        "applies_when": "Reproducing failing tests in this repository.",
+        "basis": "deterministic",
+        "captured_at": 1700000001.25,
+        "claim": "Use the repository test driver when reproducing failures.",
+        "detector": "user-correction",
+        "digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "fingerprint": "sha256:test-driver",
+        "id": 7,
+        "identifiers": "test-driver",
+        "kind": "method",
+        "links": [
+          {
+            "older": 3,
+            "relation": "supersedes"
+          }
+        ],
+        "observed_at": 1700000000.5,
+        "project_key": "0123456789abcdef",
+        "project_label": "usr",
+        "record": "experience",
+        "revision": null,
+        "sources": [
+          {
+            "digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "position": 3,
+            "role": "trigger",
+            "session": "codex:native-1@origin-a"
+          },
+          {
+            "digest": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+            "position": 0,
+            "role": "outcome",
+            "session": "claude:native-2@origin-a"
+          }
+        ],
+        "state": "approved",
+        "state_at": null,
+        "state_reason": null,
+        "tags": "tests",
+        "validity": "[]",
+        "worktree": null
+      },
+      "name": "bad-experience-state",
+      "valid": false
+    },
+    {
+      "change": {
+        "applies_when": "Reproducing failing tests in this repository.",
+        "basis": "deterministic",
+        "captured_at": 1700000001.25,
+        "claim": "Use the repository test driver when reproducing failures.",
+        "detector": "user-correction",
+        "digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "fingerprint": "sha256:test-driver",
+        "id": 7,
+        "identifiers": "test-driver",
+        "kind": "method",
+        "links": [
+          {
+            "older": 3,
+            "relation": "supersedes"
+          }
+        ],
+        "observed_at": 1700000000.5,
+        "project_key": "0123456789abcdef",
+        "project_label": "usr",
+        "record": "experience",
+        "revision": null,
+        "sources": [
+          {
+            "digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "position": 3,
+            "role": "other",
+            "session": "codex:native-1@origin-a"
+          }
+        ],
+        "state": "retained",
+        "state_at": null,
+        "state_reason": null,
+        "tags": "tests",
+        "validity": "[]",
+        "worktree": null
+      },
+      "name": "bad-source-role",
+      "valid": false
+    },
+    {
+      "change": {
+        "applies_when": "Reproducing failing tests in this repository.",
+        "basis": "deterministic",
+        "captured_at": 1700000001.25,
+        "claim": "Use the repository test driver when reproducing failures.",
+        "detector": "user-correction",
+        "digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "fingerprint": "sha256:test-driver",
+        "id": 7,
+        "identifiers": "test-driver",
+        "kind": "method",
+        "links": [
+          {
+            "older": 3,
+            "relation": "replaces"
+          }
+        ],
+        "observed_at": 1700000000.5,
+        "project_key": "0123456789abcdef",
+        "project_label": "usr",
+        "record": "experience",
+        "revision": null,
+        "sources": [
+          {
+            "digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "position": 3,
+            "role": "trigger",
+            "session": "codex:native-1@origin-a"
+          },
+          {
+            "digest": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+            "position": 0,
+            "role": "outcome",
+            "session": "claude:native-2@origin-a"
+          }
+        ],
+        "state": "retained",
+        "state_at": null,
+        "state_reason": null,
+        "tags": "tests",
+        "validity": "[]",
+        "worktree": null
+      },
+      "name": "bad-link-relation",
+      "valid": false
+    },
+    {
+      "change": {
+        "action": "Reproduce the failing test before changing the implementation.",
+        "applicability": "Any repository with a failing test.",
+        "created_at": 1700000002.75,
+        "digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "id": 9,
+        "links": [
+          {
+            "older": 3,
+            "relation": "supersedes"
+          }
+        ],
+        "project_key": "fedcba9876543210",
+        "record": "memory",
+        "revision": "abc123",
+        "sources": [
+          {
+            "digest": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+            "position": 4,
+            "role": "signal",
+            "session": "codex:native-3@origin-a"
+          }
+        ],
+        "state": "approved",
+        "validity": "[]"
+      },
+      "name": "memory-with-links",
+      "valid": false
+    },
+    {
+      "change": {
+        "action": "Reproduce the failing test before changing the implementation.",
+        "applicability": "Any repository with a failing test.",
+        "created_at": 1700000002.75,
+        "digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "id": 9,
+        "links": [],
+        "project_key": "fedcba9876543210",
+        "record": "memory",
+        "revision": "abc123",
+        "sources": [
+          {
+            "digest": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+            "position": 4,
+            "role": "signal",
+            "session": "codex:native-3@origin-a"
+          }
+        ],
+        "state": "retained",
+        "validity": "[]"
+      },
+      "name": "bad-memory-state",
+      "valid": false
+    },
+    {
+      "change": {
+        "applies_when": "Reproducing failing tests in this repository.",
+        "basis": "deterministic",
+        "captured_at": 1700000001.25,
+        "claim": "Use the repository test driver when reproducing failures.",
+        "detector": "user-correction",
+        "digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "fingerprint": "sha256:test-driver",
+        "id": 7,
+        "identifiers": "test-driver",
+        "kind": "method",
+        "links": [
+          {
+            "older": 3,
+            "relation": "supersedes"
+          }
+        ],
+        "observed_at": 1700000000.5,
+        "project_key": "0123456789ABCDEF",
+        "project_label": "usr",
+        "record": "experience",
+        "revision": null,
+        "sources": [
+          {
+            "digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "position": 3,
+            "role": "trigger",
+            "session": "codex:native-1@origin-a"
+          },
+          {
+            "digest": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+            "position": 0,
+            "role": "outcome",
+            "session": "claude:native-2@origin-a"
+          }
+        ],
+        "state": "retained",
+        "state_at": null,
+        "state_reason": null,
+        "tags": "tests",
+        "validity": "[]",
+        "worktree": null
+      },
+      "name": "bad-project-key",
+      "valid": false
+    },
+    {
+      "change": {
+        "applies_when": "Reproducing failing tests in this repository.",
+        "basis": "deterministic",
+        "captured_at": 1700000001.25,
+        "claim": "Use the repository test driver when reproducing failures.",
+        "detector": "user-correction",
+        "digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "fingerprint": "sha256:test-driver",
+        "id": 7,
+        "identifiers": "test-driver",
+        "kind": "method",
+        "links": [
+          {
+            "older": 3,
+            "relation": "supersedes"
+          }
+        ],
+        "observed_at": 1700000000.5,
+        "project_key": "0123456789abcdef",
+        "project_label": "usr",
+        "record": "experience",
+        "revision": null,
+        "sources": [
+          {
+            "digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "position": 3,
+            "role": "trigger",
+            "session": "codex:native-1"
+          }
+        ],
+        "state": "retained",
+        "state_at": null,
+        "state_reason": null,
+        "tags": "tests",
+        "validity": "[]",
+        "worktree": null
+      },
+      "name": "unqualified-source",
+      "valid": false
+    },
+    {
+      "change": {
+        "applies_when": "Reproducing failing tests in this repository.",
+        "basis": "deterministic",
+        "captured_at": 1700000001.25,
+        "claim": "Use the repository test driver when reproducing failures.",
+        "detector": "user-correction",
+        "digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "fingerprint": "sha256:test-driver",
+        "id": 7,
+        "identifiers": "test-driver",
+        "kind": "method",
+        "links": [
+          {
+            "older": 3,
+            "relation": "supersedes"
+          }
+        ],
+        "observed_at": 1700000000.5,
+        "project_key": "0123456789abcdef",
+        "project_label": "usr",
+        "record": "experience",
+        "revision": null,
+        "sources": [
+          {
+            "digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "position": 3,
+            "role": "trigger",
+            "session": "codex:native-1@origin-b"
+          }
+        ],
+        "state": "retained",
+        "state_at": null,
+        "state_reason": null,
+        "tags": "tests",
+        "validity": "[]",
+        "worktree": null
+      },
+      "name": "cross-origin-source",
+      "valid": false
+    },
+    {
+      "change": {
+        "applies_when": "Reproducing failing tests in this repository.",
+        "basis": "deterministic",
+        "captured_at": 1700000001.25,
+        "claim": "Use the repository test driver when reproducing failures.",
+        "detector": "user-correction",
+        "digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "fingerprint": "sha256:test-driver",
+        "id": 7,
+        "identifiers": "test-driver",
+        "kind": "method",
+        "links": [
+          {
+            "older": 3,
+            "relation": "supersedes"
+          }
+        ],
+        "observed_at": 1700000000.5,
+        "project_key": "0123456789abcdef",
+        "project_label": "usr",
+        "record": "insight",
+        "revision": null,
+        "sources": [
+          {
+            "digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "position": 3,
+            "role": "trigger",
+            "session": "codex:native-1@origin-a"
+          },
+          {
+            "digest": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+            "position": 0,
+            "role": "outcome",
+            "session": "claude:native-2@origin-a"
+          }
+        ],
+        "state": "retained",
+        "state_at": null,
+        "state_reason": null,
+        "tags": "tests",
+        "validity": "[]",
+        "worktree": null
+      },
+      "name": "unknown-record-kind",
+      "valid": false
+    },
+    {
+      "change": {
+        "deleted": false,
+        "id": 11,
+        "record": "experience"
+      },
+      "name": "deletion-not-deleted",
+      "valid": false
+    },
+    {
+      "change": {
+        "deleted": true,
+        "extra": "x",
+        "id": 11,
+        "record": "experience"
+      },
+      "name": "deletion-extra-field",
+      "valid": false
+    },
+    {
+      "change": {
+        "applies_when": "Reproducing failing tests in this repository.",
+        "basis": "deterministic",
+        "captured_at": 1700000001.25,
+        "detector": "user-correction",
+        "digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "fingerprint": "sha256:test-driver",
+        "id": 7,
+        "identifiers": "test-driver",
+        "kind": "method",
+        "links": [
+          {
+            "older": 3,
+            "relation": "supersedes"
+          }
+        ],
+        "observed_at": 1700000000.5,
+        "project_key": "0123456789abcdef",
+        "project_label": "usr",
+        "record": "experience",
+        "revision": null,
+        "sources": [
+          {
+            "digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "position": 3,
+            "role": "trigger",
+            "session": "codex:native-1@origin-a"
+          },
+          {
+            "digest": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+            "position": 0,
+            "role": "outcome",
+            "session": "claude:native-2@origin-a"
+          }
+        ],
+        "state": "retained",
+        "state_at": null,
+        "state_reason": null,
+        "tags": "tests",
+        "validity": "[]",
+        "worktree": null
+      },
+      "name": "missing-field",
+      "valid": false
+    },
+    {
+      "change": {
+        "applies_when": "Reproducing failing tests in this repository.",
+        "basis": "deterministic",
+        "captured_at": 1700000001.25,
+        "claim": "Use the repository test driver when reproducing failures.",
+        "detector": "user-correction",
+        "digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "fingerprint": "sha256:test-driver",
+        "id": 7,
+        "identifiers": "test-driver",
+        "kind": "method",
+        "links": [
+          {
+            "older": 3,
+            "relation": "supersedes"
+          }
+        ],
+        "observed_at": 1700000000.5,
+        "project_key": "0123456789abcdef",
+        "project_label": "bad\nlabel",
+        "record": "experience",
+        "revision": null,
+        "sources": [
+          {
+            "digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "position": 3,
+            "role": "trigger",
+            "session": "codex:native-1@origin-a"
+          },
+          {
+            "digest": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+            "position": 0,
+            "role": "outcome",
+            "session": "claude:native-2@origin-a"
+          }
+        ],
+        "state": "retained",
+        "state_at": null,
+        "state_reason": null,
+        "tags": "tests",
+        "validity": "[]",
+        "worktree": null
+      },
+      "name": "bad-label",
+      "valid": false
+    },
+    {
+      "change": {
+        "applies_when": "Reproducing failing tests in this repository.",
+        "basis": "deterministic",
+        "captured_at": 1700000001.25,
+        "claim": "Use the repository test driver when reproducing failures.",
+        "detector": "user-correction",
+        "digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "fingerprint": "sha256:test-driver",
+        "id": 7,
+        "identifiers": "test-driver",
+        "kind": "method",
+        "links": [
+          {
+            "older": 3,
+            "relation": "supersedes"
+          }
+        ],
+        "observed_at": 1700000000.5,
+        "project_key": "0123456789abcdef",
+        "project_label": "usr",
+        "record": "experience",
+        "revision": null,
+        "sources": [
+          {
+            "digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "position": -1,
+            "role": "trigger",
+            "session": "codex:native-1@origin-a"
+          }
+        ],
+        "state": "retained",
+        "state_at": null,
+        "state_reason": null,
+        "tags": "tests",
+        "validity": "[]",
+        "worktree": null
+      },
+      "name": "bad-position",
+      "valid": false
+    }
+  ],
+  "origin": "origin-a"
+}

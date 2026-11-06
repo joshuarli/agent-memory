@@ -1,0 +1,21 @@
+{
+  "name": "usr-memories-worker",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "check": "tsrs -p tsconfig.json --noEmit --fast",
+    "lint": "oxlint src test",
+    "test": "node --test test/*.test.mjs",
+    "test:runtime": "node --test test/runtime.test.mjs",
+    "test:protocol": "node --test test/protocol.test.mjs"
+  },
+  "devDependencies": {
+    "@cloudflare/config": "0.29.0",
+    "@cloudflare/workers-types": "5.20261101.1",
+    "cf": "1.0.0-beta.26",
+    "miniflare": "4.20260730.0",
+    "oxlint": "1.90.0",
+    "tsrs": "0.20.1-ts7.1.0-beta"
+  }
+}
