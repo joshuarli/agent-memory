@@ -20,7 +20,7 @@ TYPED_PYTHON := src/agent_memory eval/bench_mirror.py tests/testkit.py
 GIT_TEMPLATE_DIR ?= $(wildcard /opt/homebrew/share/git-core/templates)
 ENV_GIT := $(if $(GIT_TEMPLATE_DIR),GIT_TEMPLATE_DIR=$(GIT_TEMPLATE_DIR))
 
-.PHONY: help test test-python lint dist worker-deps worker-bundle worker-test worker-check deploy smoke-deployed migrate-local dev-local reset-local migrations-check migrations-production migrate-production integration-local provision provision-access observe perf-local perf-worker perf-deployed perf-report
+.PHONY: help test test-python lint dist worker-deps worker-bundle worker-test worker-check deploy smoke-deployed migrate-local dev-local reset-local migrations-check migrations-production migrate-production integration-local cost-check provision provision-access observe perf-local perf-worker perf-deployed perf-report
 
 help: ## List targets
 	@awk 'BEGIN {FS = ":.*## "} /^[a-z][a-z0-9.-]*:.*## / {printf "%-22s %s\n", $$1, $$2}' $(MAKEFILE_LIST) | sort
@@ -90,6 +90,9 @@ integration-local: worker-bundle ## Run the Python integration suites offline
 	@mkdir -p .work/tmp
 	@OFFLINE_FORBID_CF=1 UV_OFFLINE=1 TMPDIR="$(CURDIR)/.work/tmp" \
 		sh $(WORKER_DIR)/scripts/offline-run.sh sh $(WORKER_DIR)/scripts/integration-local.sh
+
+cost-check: worker-bundle ## Run the fast D1 row-budget tests
+	cd $(WORKER_DIR) && node --test test/cost.test.mjs
 
 migrations-production: ## List pending production D1 migrations (remote, read-only)
 	@[ -n "$(DATABASE_ID)" ] || { >&2 printf 'migrations-production: cloudflare.config.ts has no D1 database id\n'; exit 1; }
