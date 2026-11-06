@@ -29,6 +29,7 @@ from agent_memory.types import HARNESSES, FindingState, Harness, RecallSource, R
 SCHEMA_VERSION = 4
 HOOK_PAYLOAD_BYTES = 1 << 20
 HOOK_PROMPT_ANCHOR_CHARS = 40
+HOOK_TRACE_IDLE_SECONDS = 3600
 MAX_EVENTS = 2000
 MAX_REVIEWS = 2
 MAX_MODEL_CALLS_PER_DAY = 24
@@ -72,6 +73,21 @@ class GrantSource(enum.Enum):
 class AdviceRelation(enum.Enum):
     SAME = "same"
     CONFLICT = "conflict"
+
+
+def insert_receipts(db, project, cwd, query, results, now, session, source: RecallSource):
+    text = redact(" ".join(str(query).split()))[:300]
+    if not results:
+        db.execute("INSERT INTO learning_receipts(project,cwd,query,created_at,record,tier,status,rank,event,session,source) VALUES(?,?,?,?,'','','',0,'abstained',?,?)",
+                   (project, str(cwd) if cwd else None, text, now, session, source))
+    for rank, item in enumerate(results):
+        db.execute("INSERT INTO learning_receipts(project,cwd,query,created_at,record,tier,status,rank,event,session,source) VALUES(?,?,?,?,?,?,?,?,'returned',?,?)",
+                   (project, str(cwd) if cwd else None, text, now, item["ref"], item["tier"], item["status"], rank, session, source))
+
+
+def captures(db, project) -> bool:
+    return db.execute("SELECT 1 FROM learning_observation WHERE project=? AND enabled=1 UNION ALL SELECT 1 FROM learning_projects WHERE project=? AND enabled=1",
+                      (project, project)).fetchone() is not None
 
 
 def initialize(db):
@@ -1233,14 +1249,8 @@ class Learner:
         return [redact(token) for token, _ in counts.most_common(limit) if redact(token) == token]
 
     def record_receipts(self, project, cwd, query, response, now, session, source: RecallSource):
-        text = redact(" ".join(str(query).split()))[:300]
         with self.db:
-            if not response["results"]:
-                self.db.execute("INSERT INTO learning_receipts(project,cwd,query,created_at,record,tier,status,rank,event,session,source) VALUES(?,?,?,?,'','','',0,'abstained',?,?)",
-                                (project, str(cwd) if cwd else None, text, now, session, source))
-            for rank, item in enumerate(response["results"]):
-                self.db.execute("INSERT INTO learning_receipts(project,cwd,query,created_at,record,tier,status,rank,event,session,source) VALUES(?,?,?,?,?,?,?,?,'returned',?,?)",
-                                (project, str(cwd) if cwd else None, text, now, item["ref"], item["tier"], item["status"], rank, session, source))
+            insert_receipts(self.db, project, cwd, query, response["results"], now, session, source)
 
     def recall(self, project, query, cwd=None) -> list[dict[str, Any]]:
         response = self.retrieve(project, query, cwd=cwd, include_events=False)
@@ -1330,7 +1340,7 @@ class Learner:
         return found
 
     def captures(self, project) -> bool:
-        return project in self._observed_projects()
+        return captures(self.db, project)
 
     def observe_project(self, project, cwd, now, stable_seconds=STABLE_SECONDS):
         totals = observe_project(self.db, project, Path(cwd), now, stable_seconds)
@@ -1472,7 +1482,8 @@ class Learner:
 
     def forget_session(self, session, now):
         known = self.db.execute("SELECT 1 FROM sessions WHERE id=?", (session,)).fetchone() or \
-            self.db.execute("SELECT 1 FROM learning_incidents WHERE session=? UNION SELECT 1 FROM learning_experience_sources WHERE session=?", (session, session)).fetchone()
+            self.db.execute("SELECT 1 FROM learning_incidents WHERE session=? UNION SELECT 1 FROM learning_experience_sources WHERE session=? "
+                            "UNION SELECT 1 FROM learning_hook_sessions WHERE session=? UNION SELECT 1 FROM learning_receipts WHERE session=?", (session,) * 4).fetchone()
         if known is None:
             raise LearningError("no indexed or derived record references that session")
         return self._forget_session(session, now, lambda: self.store.forget_session(session, now))
@@ -1560,7 +1571,7 @@ class Learner:
         receipts = {row[0]: row[1] for row in self.db.execute("SELECT event,count(*) FROM learning_receipts GROUP BY event")}
         returned = self.db.execute("SELECT tier,status,count(*) FROM learning_receipts WHERE event='returned' GROUP BY tier,status").fetchall()
         repeated_abstentions = [dict(row) for row in self.db.execute(
-            "SELECT query,count(*) AS times FROM learning_receipts WHERE event='abstained' AND query!='' GROUP BY lower(query) HAVING count(*)>=2 ORDER BY times DESC LIMIT 10")]
+            "SELECT query,count(*) AS times FROM learning_receipts WHERE event='abstained' AND source='agent' AND query!='' GROUP BY lower(query) HAVING count(*)>=2 ORDER BY times DESC LIMIT 10")]
         uninspected_leads = self.db.execute(
             "SELECT count(DISTINCT record) FROM learning_receipts r WHERE event='returned' AND tier='lead' AND NOT EXISTS "
             "(SELECT 1 FROM learning_receipts i WHERE i.record=r.record AND i.event='inspected')").fetchone()[0]
@@ -1568,7 +1579,9 @@ class Learner:
         outcomes = {row[0]: row[1] for row in self.db.execute("SELECT verification,count(*) FROM learning_outcomes GROUP BY verification")}
         hook_attempts = {row[0]: row[1] for row in self.db.execute("SELECT outcome,count(*) FROM learning_hook_sessions GROUP BY outcome")}
         hook_outcomes = {"%s/%s" % ("acted" if row[0] else "not_acted", row[1]): row[2] for row in self.db.execute(
-            "SELECT coalesce(o.acted,0),o.verification,count(*) FROM learning_outcomes o JOIN learning_hook_sessions h ON h.session=o.session GROUP BY 1,2")}
+            "SELECT coalesce(o.acted,0),o.verification,count(*) FROM learning_outcomes o WHERE EXISTS (SELECT 1 FROM learning_receipts r "
+            "WHERE r.source='hook' AND r.event='returned' AND r.session=o.session AND r.record=o.record) GROUP BY 1,2")}
+        by_source = {"%s/%s" % (row[0], row[1]): row[2] for row in self.db.execute("SELECT source,event,count(*) FROM learning_receipts GROUP BY source,event")}
         consolidation = []
         rows = self.db.execute("SELECT id,project,identifiers,claim FROM learning_experiences WHERE state='retained' ORDER BY id DESC LIMIT 200").fetchall()
         for index, left in enumerate(rows):
@@ -1580,6 +1593,7 @@ class Learner:
                     consolidation.append({"experiences": [left["id"], right["id"]], "shared_identifiers": round(shared, 2)})
         return {
             "receipts": receipts,
+            "receipts_by_source": by_source,
             "returned_by_tier_status": {"%s/%s" % (row[0], row[1]): row[2] for row in returned},
             "stale_results_returned": sum(row[2] for row in returned if row[1] == "needs_revalidation"),
             "leads_never_inspected": uninspected_leads,
@@ -1596,8 +1610,10 @@ class Learner:
     def trace_outcomes(self, now, limit=50):
         written = 0
         receipts = self.db.execute("""SELECT * FROM learning_receipts r WHERE event='returned' AND created_at<=? AND created_at>=?
-            AND NOT EXISTS (SELECT 1 FROM learning_outcomes o WHERE o.record=r.record AND o.project=r.project AND o.computed_at>=r.created_at)
-            ORDER BY created_at LIMIT ?""", (now, now - 14 * 86400, limit)).fetchall()
+            AND (r.source='agent' OR EXISTS (SELECT 1 FROM sessions s WHERE s.id=r.session AND s.updated<=?))
+            AND NOT EXISTS (SELECT 1 FROM learning_outcomes o WHERE o.record=r.record AND o.project=r.project AND o.computed_at>=r.created_at
+                            AND (r.source='agent' OR o.session=r.session))
+            ORDER BY created_at LIMIT ?""", (now, now - 14 * 86400, now - HOOK_TRACE_IDLE_SECONDS, limit)).fetchall()
         for receipt in receipts:
             located = self._receipt_session(receipt)
             if located is None:
@@ -1807,7 +1823,7 @@ def main(argv=None):
                     output = {"hookSpecificOutput": {"hookEventName": "UserPromptSubmit", "additionalContext": context}}
             else:
                 hook(args.state_dir, payload)
-        except (OSError, ValueError, sqlite3.Error, StoreError, LearningError) as error:
+        except Exception as error:
             print("agent-learn hook: " + redact(str(error))[:200], file=sys.stderr)
         print(json.dumps(output))
         return 0

@@ -576,7 +576,7 @@ def retire_stale(db, now, days=RETIRE_AFTER_DAYS):
             "UPDATE learning_experiences SET state = 'retired', state_reason = 'unused single-session historical candidate', state_at = ? "
             "WHERE state = 'retained' AND validity = '[]' AND observed_at < ? AND captured_at < ? "
             "AND (SELECT count(DISTINCT session) FROM learning_experience_sources WHERE experience = learning_experiences.id) <= 1 "
-            "AND NOT EXISTS (SELECT 1 FROM learning_receipts r WHERE r.record = 'experience:' || learning_experiences.id)",
+            "AND NOT EXISTS (SELECT 1 FROM learning_receipts r WHERE r.record = 'experience:' || learning_experiences.id AND r.source = 'agent')",
             (now, cutoff, cutoff)).rowcount
 
 
