@@ -9,8 +9,8 @@ from pathlib import Path
 from unittest.mock import patch
 
 
-REPOSITORY = Path(__file__).resolve().parents[1]
-SRC = REPOSITORY / "src"
+REPOSITORY = Path(__file__).resolve().parents[2]
+SRC = REPOSITORY / "agent-memory" / "src"
 sys.path.insert(0, str(SRC))
 from agent_memory import learning_ops as OPS  # noqa: E402
 from agent_memory import store as STORE  # noqa: E402

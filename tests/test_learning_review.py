@@ -15,7 +15,7 @@ from typing import Any
 from unittest import mock
 
 
-SCRIPT = Path(__file__).resolve().parents[2] / "src/agent_memory/learning_review.py"
+SCRIPT = Path(__file__).resolve().parents[2] / "agent-memory/src/agent_memory/learning_review.py"
 SPEC = importlib.util.spec_from_file_location("agent_memory.learning_review", SCRIPT)
 assert SPEC is not None
 REVIEW = importlib.util.module_from_spec(SPEC)

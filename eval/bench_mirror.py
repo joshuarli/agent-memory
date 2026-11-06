@@ -21,8 +21,8 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import quote, urlsplit
 
-ROOT = Path(__file__).resolve().parents[1]
-SRC_DIR = ROOT / "src"
+ROOT = Path(__file__).resolve().parents[2]
+SRC_DIR = ROOT / "agent-memory" / "src"
 WORK_TMP = ROOT / ".work" / "tmp"
 PERF_GATE = ROOT / "dotfiles" / "base" / ".local" / "bin" / "perf-gate-ready"
 SCHEMA_VERSION = 1
@@ -547,10 +547,10 @@ def _worker_server():
     node = shutil.which("node")
     if node is None:
         raise RuntimeError("node is required for worker benchmarks")
-    worker_dir = ROOT / "cloudflare"
+    worker_dir = ROOT / "agent-memory" / "cloudflare"
     bundle = worker_dir / ".cloudflare" / "output" / "v0" / "workers" / "default" / "bundle" / "index.js"
     if not bundle.is_file():
-        raise RuntimeError("missing worker bundle; run `npm run build` in cloudflare/")
+        raise RuntimeError("missing worker bundle; run `npm run build` in agent-memory/cloudflare")
     process = subprocess.Popen([node, "test/serve.mjs"], cwd=worker_dir, stdout=subprocess.PIPE,
                                stderr=subprocess.PIPE, text=True)
     stdout = process.stdout

@@ -13,8 +13,8 @@ import unittest
 from pathlib import Path
 from typing import Any, cast
 
-ROOT = Path(__file__).resolve().parents[1]
-SRC = ROOT / "src"
+ROOT = Path(__file__).resolve().parents[2]
+SRC = ROOT / "agent-memory" / "src"
 sys.path.insert(0, str(SRC))
 from agent_memory import learning  # noqa: E402
 from agent_memory import experience as experience_module  # noqa: E402

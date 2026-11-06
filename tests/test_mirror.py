@@ -21,10 +21,10 @@ from pathlib import Path
 from typing import Any, cast
 from unittest import mock
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[2]
 WORK_TMP = ROOT / ".work" / "tmp"
 WORK_TMP.mkdir(parents=True, exist_ok=True)
-sys.path.insert(0, str(ROOT / "src"))
+sys.path.insert(0, str(ROOT / "agent-memory" / "src"))
 
 from agent_memory import archive as archive_module  # noqa: E402
 from agent_memory import experience as experience_module  # noqa: E402
@@ -35,9 +35,9 @@ from agent_memory import mirror_crypto  # noqa: E402
 from agent_memory import types as types_module  # noqa: E402
 from agent_memory.store import Store  # noqa: E402
 
-FIXTURE = json.loads((ROOT / "tests" / "fixtures" / "mirror_protocol.json").read_text())
+FIXTURE = json.loads((ROOT / "agent-memory" / "tests" / "fixtures" / "mirror_protocol.json").read_text())
 LEARNING_FIXTURE = json.loads(
-    (ROOT / "tests" / "fixtures" / "learning_records.json").read_text())
+    (ROOT / "agent-memory" / "tests" / "fixtures" / "learning_records.json").read_text())
 DIGEST = "a" * 64
 OTHER = "b" * 64
 CIPHER = "c" * 64
@@ -1577,7 +1577,7 @@ def ensure_age():
         return
     except mirror_crypto.CryptoError:
         result = subprocess.run(
-            ["sh", str(ROOT / "cloudflare" / "dev-age.sh")],
+            ["sh", str(ROOT / "agent-memory" / "cloudflare" / "dev-age.sh")],
             stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
         if result.returncode != 0:
             raise AssertionError("cannot build rage: " + result.stderr.strip()) from None
@@ -1631,10 +1631,10 @@ class MirrorIntegrationTests(unittest.TestCase):
         if node is None:
             raise AssertionError("node is required for mirror integration tests")
         cls.node: str = node
-        cls.worker_dir = ROOT / "cloudflare"
+        cls.worker_dir = ROOT / "agent-memory" / "cloudflare"
         cls.bundle = cls.worker_dir / ".cloudflare" / "output" / "v0" / "workers" / "default" / "bundle" / "index.js"
         if not cls.bundle.is_file():
-            raise AssertionError("missing worker bundle; run `npm run build` in cloudflare/")
+            raise AssertionError("missing worker bundle; run `npm run build` in agent-memory/cloudflare")
         ensure_age()
 
     def setUp(self):
@@ -2103,10 +2103,10 @@ class MirrorCliTests(unittest.TestCase):
         if node is None:
             raise AssertionError("node is required for mirror CLI tests")
         cls.node: str = node
-        cls.worker_dir = ROOT / "cloudflare"
+        cls.worker_dir = ROOT / "agent-memory" / "cloudflare"
         cls.bundle = cls.worker_dir / ".cloudflare" / "output" / "v0" / "workers" / "default" / "bundle" / "index.js"
         if not cls.bundle.is_file():
-            raise AssertionError("missing worker bundle; run `npm run build` in cloudflare/")
+            raise AssertionError("missing worker bundle; run `npm run build` in agent-memory/cloudflare")
         openssl = shutil.which("openssl")
         if openssl is None:
             raise AssertionError("openssl is required for the mirror CLI tests")
@@ -2436,10 +2436,10 @@ class MemoryGateTests(unittest.TestCase):
         node = shutil.which("node")
         if node is None:
             raise AssertionError("node is required for the mirror memory gate")
-        worker_dir = ROOT / "cloudflare"
+        worker_dir = ROOT / "agent-memory" / "cloudflare"
         bundle = worker_dir / ".cloudflare" / "output" / "v0" / "workers" / "default" / "bundle" / "index.js"
         if not bundle.is_file():
-            raise AssertionError("missing worker bundle; run `npm run build` in cloudflare/")
+            raise AssertionError("missing worker bundle; run `npm run build` in agent-memory/cloudflare")
         cls.process, cls.port = start_integration_server(
             node, worker_dir, [{"client_id": "collector-client.access", "origin": "origin-a"}])
 
@@ -2483,7 +2483,7 @@ import sys
 from pathlib import Path
 
 settings = json.loads(os.environ["MEMORY_GATE"])
-sys.path.insert(0, str(Path(settings["root"]) / "src"))
+sys.path.insert(0, str(Path(settings["root"]) / "agent-memory" / "src"))
 from agent_memory import mirror, mirror_crypto
 port = int(settings["url"].rsplit(":", 1)[1])
 
@@ -2560,10 +2560,10 @@ class LoadRunTests(unittest.TestCase):
         node = shutil.which("node")
         if node is None:
             raise AssertionError("node is required for the mirror load run")
-        cls.worker_dir = ROOT / "cloudflare"
+        cls.worker_dir = ROOT / "agent-memory" / "cloudflare"
         bundle = cls.worker_dir / ".cloudflare" / "output" / "v0" / "workers" / "default" / "bundle" / "index.js"
         if not bundle.is_file():
-            raise AssertionError("missing worker bundle; run `npm run build` in cloudflare/")
+            raise AssertionError("missing worker bundle; run `npm run build` in agent-memory/cloudflare")
         collectors = [{"client_id": "load-%d.access" % index, "origin": "load-%d" % index}
                       for index in range(cls.COLLECTORS)]
         cls.process, cls.port = start_integration_server(

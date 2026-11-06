@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import Any
 
 
-REPOSITORY = Path(__file__).resolve().parents[1]
+REPOSITORY = Path(__file__).resolve().parents[2]
 SRC = REPOSITORY / "agent-memory/src"
 sys.path.insert(0, str(SRC))
 

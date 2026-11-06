@@ -10,9 +10,9 @@ from typing import Any
 from unittest.mock import patch
 
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[2]
 WORK_TMP = ROOT / ".work/tmp"
-MODULE_PATH = ROOT / "src/agent_memory/learning_promote.py"
+MODULE_PATH = ROOT / "agent-memory/src/agent_memory/learning_promote.py"
 SPEC = importlib.util.spec_from_file_location("agent_learning_promote", MODULE_PATH)
 assert SPEC is not None
 promotion = importlib.util.module_from_spec(SPEC)

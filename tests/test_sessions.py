@@ -15,11 +15,11 @@ from pathlib import Path
 from typing import Any
 from unittest import mock
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[2]
 WORK_TMP = ROOT / ".work" / "tmp"
 WORK_TMP.mkdir(parents=True, exist_ok=True)
-sys.path.insert(0, str(ROOT / "src"))
-MODULE_PATH = ROOT / "src" / "agent_memory" / "store.py"
+sys.path.insert(0, str(ROOT / "agent-memory" / "src"))
+MODULE_PATH = ROOT / "agent-memory" / "src" / "agent_memory" / "store.py"
 SPEC = importlib.util.spec_from_file_location("agent_session_store", MODULE_PATH)
 assert SPEC is not None
 STORE_MODULE = importlib.util.module_from_spec(SPEC)

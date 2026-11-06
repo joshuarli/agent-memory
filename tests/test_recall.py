@@ -10,13 +10,13 @@ import unittest
 from pathlib import Path
 from typing import Any
 
-ROOT = Path(__file__).resolve().parents[1]
-SRC = ROOT / "src"
+ROOT = Path(__file__).resolve().parents[2]
+SRC = ROOT / "agent-memory" / "src"
 SHIM = ROOT / "dotfiles" / "base" / ".local" / "bin" / "agent-learn"
 WORK_TMP = ROOT / ".work" / "tmp"
 WORK_TMP.mkdir(parents=True, exist_ok=True)
 sys.path.insert(0, str(SRC))
-SPEC = importlib.util.spec_from_file_location("agent_recall_bench", ROOT / "eval" / "bench_recall.py")
+SPEC = importlib.util.spec_from_file_location("agent_recall_bench", ROOT / "agent-memory" / "eval" / "bench_recall.py")
 assert SPEC is not None
 BENCH = importlib.util.module_from_spec(SPEC)
 assert SPEC.loader is not None

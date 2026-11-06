@@ -12,16 +12,16 @@ import tempfile
 import time
 from pathlib import Path
 
-REPOSITORY = Path(__file__).resolve().parents[1]
+REPOSITORY = Path(__file__).resolve().parents[2]
 SRC = REPOSITORY / "agent-memory/src"
 SHIM = REPOSITORY / "dotfiles/base/.local/bin/agent-learn"
 sys.path.insert(0, str(SRC))
-SPEC = importlib.util.spec_from_file_location("agent_learning_live", REPOSITORY / "eval/live_learning.py")
+SPEC = importlib.util.spec_from_file_location("agent_learning_live", REPOSITORY / "agent-memory/eval/live_learning.py")
 assert SPEC is not None
 LIVE = importlib.util.module_from_spec(SPEC)
 assert SPEC.loader is not None
 SPEC.loader.exec_module(LIVE)
-BENCH_SPEC = importlib.util.spec_from_file_location("agent_recall_bench", REPOSITORY / "eval/bench_recall.py")
+BENCH_SPEC = importlib.util.spec_from_file_location("agent_recall_bench", REPOSITORY / "agent-memory/eval/bench_recall.py")
 assert BENCH_SPEC is not None
 BENCH = importlib.util.module_from_spec(BENCH_SPEC)
 assert BENCH_SPEC.loader is not None
