@@ -7,6 +7,7 @@ import sys
 import tempfile
 import threading
 import unittest
+import zlib
 from pathlib import Path
 from unittest import mock
 
@@ -761,6 +762,133 @@ class ArchiveTests(unittest.TestCase):
                               if path.is_file() and not path.name.startswith(".")]
             self.assertTrue(restored_files)
             self.assertTrue(all(path.name.endswith(".zlib") for path in restored_files))
+
+    def write_plain_object(self, store, data):
+        digest = ARCHIVE.sha256(data)
+        path = ARCHIVE.object_path(store.archive_dir, digest)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(data)
+        with store.db:
+            store.db.execute("INSERT OR IGNORE INTO archive_object (digest, size, created_at) VALUES (?, ?, ?)",
+                             (digest, len(data), 0.0))
+        return digest
+
+    def plain_all_objects(self, store):
+        contents = {}
+        for row in store.db.execute("SELECT digest FROM archive_object ORDER BY digest"):
+            digest = row[0]
+            contents[digest] = ARCHIVE.read_object(store.archive_dir, digest)
+            ARCHIVE.compressed_object_path(store.archive_dir, digest).unlink(missing_ok=True)
+            path = ARCHIVE.object_path(store.archive_dir, digest)
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_bytes(contents[digest])
+        return contents
+
+    def run_archive(self, *arguments):
+        return subprocess.run(
+            testkit.command("agent-sessions") + ["archive", *arguments, "--state-dir", str(self.state)],
+            capture_output=True, text=True)
+
+    def test_compact_dry_run_reports_compressible_plain_objects_without_changing_files(self):
+        data = ("legacy compressible evidence " * 200).encode()
+        payload, encode = ARCHIVE._encode_object(data)
+        self.assertTrue(encode)
+        with Store(self.state) as store:
+            digest = self.write_plain_object(store, data)
+            before = {path: path.read_bytes() for path in self.object_file_paths(store)}
+            result = self.run_archive("compact")
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertEqual(result.stdout.strip(),
+                             "objects=1 compressible=1 plain_bytes=%d compressed_bytes=%d apply=0"
+                             % (len(data), len(payload)))
+            self.assertEqual({path: path.read_bytes() for path in self.object_file_paths(store)}, before)
+            self.assertTrue(ARCHIVE.object_path(store.archive_dir, digest).is_file())
+            self.assertFalse(ARCHIVE.compressed_object_path(store.archive_dir, digest).exists())
+            machine = self.run_archive("compact", "--json")
+            self.assertEqual(machine.returncode, 0, machine.stdout + machine.stderr)
+            self.assertEqual(json.loads(machine.stdout), {
+                "objects": 1, "compressible": 1, "plain_bytes": len(data),
+                "compressed_bytes": len(payload), "apply": False})
+
+    def test_compact_apply_converts_plain_objects_and_keeps_generations_readable(self):
+        self.write("compressible compact evidence " * 300)
+        with Store(self.state) as store:
+            self.refresh(store)
+            generation = store.db.execute("SELECT max(id) FROM archive_generation").fetchone()[0]
+            contents = self.plain_all_objects(store)
+            self.assertTrue(contents)
+            self.assertTrue(any(not path.name.endswith(".zlib") for path in self.object_file_paths(store)))
+            result = self.run_archive("compact", "--apply")
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertIn("compacted=%d" % len(contents), result.stdout)
+            for digest, expected in contents.items():
+                self.assertTrue(ARCHIVE.compressed_object_path(store.archive_dir, digest).is_file())
+                self.assertFalse(ARCHIVE.object_path(store.archive_dir, digest).exists())
+                self.assertEqual(ARCHIVE.read_object(store.archive_dir, digest), expected)
+            self.assertEqual(ARCHIVE.read_generation(store.db, store.archive_dir, generation), self.path.read_bytes())
+        verify = self.run_archive("verify")
+        self.assertEqual(verify.returncode, 0, verify.stdout + verify.stderr)
+
+    def test_compact_leaves_an_incompressible_object_plain(self):
+        data = os.urandom(ARCHIVE.CHUNK_BYTES)
+        with Store(self.state) as store:
+            digest = self.write_plain_object(store, data)
+            result = self.run_archive("compact", "--apply")
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertIn("compacted=0", result.stdout)
+            self.assertIn("skipped_incompressible=1", result.stdout)
+            self.assertTrue(ARCHIVE.object_path(store.archive_dir, digest).is_file())
+            self.assertFalse(ARCHIVE.compressed_object_path(store.archive_dir, digest).exists())
+
+    def test_compact_reports_a_corrupted_plain_object_and_leaves_it(self):
+        good = ("compressible corrupted evidence " * 200).encode()
+        digest = ARCHIVE.sha256(good)
+        damaged = good[:-1] + bytes([good[-1] ^ 0xFF])
+        with Store(self.state) as store:
+            path = ARCHIVE.object_path(store.archive_dir, digest)
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_bytes(damaged)
+            with store.db:
+                store.db.execute("INSERT OR IGNORE INTO archive_object (digest, size, created_at) VALUES (?, ?, ?)",
+                                 (digest, len(good), 0.0))
+            result = self.run_archive("compact", "--apply")
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertIn("corrupt=" + digest, result.stdout)
+            self.assertIn("compacted=0", result.stdout)
+            self.assertIn("corrupt=1", result.stdout)
+            self.assertEqual(path.read_bytes(), damaged)
+            self.assertFalse(ARCHIVE.compressed_object_path(store.archive_dir, digest).exists())
+
+    def test_compact_resolves_coexisting_plain_and_compressed_forms(self):
+        data = ("coexisting compressible evidence " * 200).encode()
+        digest = ARCHIVE.sha256(data)
+        with Store(self.state) as store:
+            plain = ARCHIVE.object_path(store.archive_dir, digest)
+            compressed = ARCHIVE.compressed_object_path(store.archive_dir, digest)
+            plain.parent.mkdir(parents=True, exist_ok=True)
+            plain.write_bytes(data)
+            compressed.write_bytes(zlib.compress(data, ARCHIVE.ZLIB_LEVEL))
+            with store.db:
+                store.db.execute("INSERT OR IGNORE INTO archive_object (digest, size, created_at) VALUES (?, ?, ?)",
+                                 (digest, len(data), 0.0))
+            result = self.run_archive("compact", "--apply")
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertIn("compacted=1", result.stdout)
+            self.assertFalse(plain.exists())
+            self.assertTrue(compressed.is_file())
+            self.assertEqual(ARCHIVE.read_object(store.archive_dir, digest), data)
+
+    def test_a_second_compact_apply_is_a_noop(self):
+        data = ("idempotent compressible evidence " * 200).encode()
+        with Store(self.state) as store:
+            self.write_plain_object(store, data)
+            first = self.run_archive("compact", "--apply")
+            self.assertEqual(first.returncode, 0, first.stdout + first.stderr)
+            self.assertIn("compacted=1", first.stdout)
+            second = self.run_archive("compact", "--apply")
+            self.assertEqual(second.returncode, 0, second.stdout + second.stderr)
+            self.assertEqual(second.stdout.strip(),
+                             "compacted=0 bytes_before=0 bytes_after=0 skipped_incompressible=0 corrupt=0")
 
 
 if __name__ == "__main__":

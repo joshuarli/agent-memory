@@ -730,6 +730,25 @@ def _archive(args):
                 count = store.reindex_generations()
                 print("generations_reindexed=%d sessions=%d" % (count, store.db.execute("SELECT count(*) FROM sessions").fetchone()[0]))
                 return 0
+            if args.action == "compact":
+                result = archive_module.compact(store.db, store.archive_dir, apply=args.apply)
+                if args.apply:
+                    for digest in result["corrupt_digests"]:
+                        print("corrupt=" + digest)
+                    print("compacted=%d bytes_before=%d bytes_after=%d skipped_incompressible=%d corrupt=%d"
+                          % (result["compacted"], result["bytes_before"], result["bytes_after"],
+                             result["skipped_incompressible"], result["corrupt"]))
+                    return 0
+                if args.json:
+                    document = {key: result[key] for key in ("objects", "compressible", "plain_bytes", "compressed_bytes")}
+                    document["apply"] = False
+                    print(json.dumps(document, sort_keys=True))
+                    return 0
+                for digest in result["corrupt_digests"]:
+                    print("corrupt=" + digest)
+                print("objects=%d compressible=%d plain_bytes=%d compressed_bytes=%d apply=0"
+                      % (result["objects"], result["compressible"], result["plain_bytes"], result["compressed_bytes"]))
+                return 0
             if args.action == "prune-legacy":
                 total = files = redundant_files = redundant_bytes = retained_files = retained_bytes = 0
                 for path, size, redundant in archive_module.legacy_copies(store.db, store.archive_dir):
@@ -1107,9 +1126,9 @@ def parser():
                         help="capture sessions from this root during sync")
     mirror.set_defaults(run=_mirror)
 
-    archive = commands.add_parser("archive", help="verify, reindex, or report the local archive")
-    archive.add_argument("action", choices=("status", "verify", "reindex", "prune-legacy"))
-    archive.add_argument("--apply", action="store_true", help="delete redundant legacy copies")
+    archive = commands.add_parser("archive", help="verify, reindex, compact, or report the local archive")
+    archive.add_argument("action", choices=("status", "verify", "reindex", "prune-legacy", "compact"))
+    archive.add_argument("--apply", action="store_true", help="apply pruning or compaction changes")
     archive.add_argument("--json", action="store_true", help="print a machine-readable status document")
     archive.add_argument("--state-dir")
     archive.set_defaults(run=_archive)

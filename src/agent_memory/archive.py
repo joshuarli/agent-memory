@@ -167,6 +167,119 @@ def _write_object(archive_dir, data):
     return digest, len(data), True
 
 
+def _write_compressed_object(archive_dir, digest, payload):
+    target = compressed_object_path(archive_dir, digest)
+    target.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+    staging = target.with_name(".tmp." + secrets.token_hex(8))
+    try:
+        descriptor = os.open(staging, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+        try:
+            view = memoryview(payload)
+            while view:
+                written = os.write(descriptor, view)
+                view = view[written:]
+            os.fsync(descriptor)
+        finally:
+            os.close(descriptor)
+        os.replace(staging, target)
+        _fsync_directory(target.parent)
+    except BaseException:
+        try:
+            staging.unlink()
+        except OSError:
+            pass
+        raise
+
+
+def compact(db, archive_dir, *, apply=False):
+    archive_dir = Path(archive_dir)
+    digests = [row[0] for row in db.execute("SELECT digest FROM archive_object ORDER BY digest")]
+    result: dict[str, Any] = {
+        "objects": 0, "compressible": 0, "plain_bytes": 0, "compressed_bytes": 0,
+        "compacted": 0, "bytes_before": 0, "bytes_after": 0,
+        "skipped_incompressible": 0, "corrupt": 0, "corrupt_digests": [],
+    }
+
+    def note_corrupt(digest):
+        result["corrupt"] += 1
+        result["corrupt_digests"].append(digest)
+
+    for digest in digests:
+        plain = object_path(archive_dir, digest)
+        compressed = compressed_object_path(archive_dir, digest)
+        if not apply:
+            if not (plain.is_file() and not plain.is_symlink()):
+                continue
+            if compressed.is_file() and not compressed.is_symlink():
+                continue
+            result["objects"] += 1
+            try:
+                data = _read_stored(plain)
+            except OSError:
+                note_corrupt(digest)
+                continue
+            if sha256(data) != digest:
+                note_corrupt(digest)
+                continue
+            payload, encode = _encode_object(data)
+            if not encode:
+                result["skipped_incompressible"] += 1
+                continue
+            result["compressible"] += 1
+            result["plain_bytes"] += len(data)
+            result["compressed_bytes"] += len(payload)
+            continue
+        with object_lock(archive_dir, exclusive=True):
+            if not (plain.is_file() and not plain.is_symlink()):
+                continue
+            plain_size = plain.stat().st_size
+            if compressed.is_file() and not compressed.is_symlink():
+                try:
+                    verified = sha256(_read_stored(compressed)) == digest
+                except (OSError, zlib.error):
+                    verified = False
+                if not verified:
+                    note_corrupt(digest)
+                    continue
+                compressed_size = compressed.stat().st_size
+                plain.unlink()
+                _fsync_directory(plain.parent)
+                result["compacted"] += 1
+                result["bytes_before"] += plain_size
+                result["bytes_after"] += compressed_size
+                continue
+            try:
+                data = _read_stored(plain)
+            except OSError:
+                note_corrupt(digest)
+                continue
+            if sha256(data) != digest:
+                note_corrupt(digest)
+                continue
+            payload, encode = _encode_object(data)
+            if not encode:
+                result["skipped_incompressible"] += 1
+                continue
+            _write_compressed_object(archive_dir, digest, payload)
+            try:
+                verified = sha256(_read_stored(compressed)) == digest
+            except (OSError, zlib.error):
+                verified = False
+            if not verified:
+                try:
+                    compressed.unlink()
+                except OSError:
+                    pass
+                note_corrupt(digest)
+                continue
+            plain.unlink()
+            _fsync_directory(plain.parent)
+            result["compacted"] += 1
+            result["bytes_before"] += len(data)
+            result["bytes_after"] += len(payload)
+    return result
+
+
 def read_object(archive_dir, digest):
     path = existing_object_path(archive_dir, digest)
     if path is None:
