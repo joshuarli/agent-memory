@@ -1,0 +1,482 @@
+{
+  "dev": {
+    "default": {
+      "categories": {
+        "contradiction": {
+          "abstentions": 0,
+          "hits": 4
+        },
+        "duplicate": {
+          "abstentions": 0,
+          "hits": 3
+        },
+        "exact_identifier": {
+          "abstentions": 0,
+          "hits": 14
+        },
+        "id_collision": {
+          "abstentions": 0,
+          "hits": 6
+        },
+        "injection": {
+          "abstentions": 0,
+          "hits": 4
+        },
+        "malformed": {
+          "abstentions": 0,
+          "hits": 2
+        },
+        "multi_record": {
+          "abstentions": 0,
+          "hits": 4
+        },
+        "negative": {
+          "abstentions": 24,
+          "hits": 0
+        },
+        "nonobvious_success": {
+          "abstentions": 0,
+          "hits": 5
+        },
+        "paraphrase": {
+          "abstentions": 0,
+          "hits": 5
+        },
+        "path_symbol_command": {
+          "abstentions": 0,
+          "hits": 9
+        },
+        "provenance": {
+          "abstentions": 0,
+          "hits": 0
+        },
+        "short_identifier": {
+          "abstentions": 0,
+          "hits": 7
+        },
+        "similar_project": {
+          "abstentions": 0,
+          "hits": 5
+        },
+        "stale_source": {
+          "abstentions": 0,
+          "hits": 5
+        },
+        "temporal": {
+          "abstentions": 0,
+          "hits": 3
+        },
+        "trajectory": {
+          "abstentions": 0,
+          "hits": 5
+        },
+        "valid_after_unrelated_commit": {
+          "abstentions": 0,
+          "hits": 4
+        },
+        "version": {
+          "abstentions": 0,
+          "hits": 6
+        },
+        "worktree": {
+          "abstentions": 0,
+          "hits": 5
+        }
+      },
+      "leakage_violations": 0,
+      "mean_result_bytes": 832.618,
+      "stale_instruction_violations": 0
+    },
+    "retries": {
+      "categories": {
+        "contradiction": {
+          "abstentions": 0,
+          "hits": 5
+        },
+        "duplicate": {
+          "abstentions": 0,
+          "hits": 5
+        },
+        "exact_identifier": {
+          "abstentions": 0,
+          "hits": 14
+        },
+        "id_collision": {
+          "abstentions": 0,
+          "hits": 6
+        },
+        "injection": {
+          "abstentions": 0,
+          "hits": 4
+        },
+        "malformed": {
+          "abstentions": 0,
+          "hits": 3
+        },
+        "multi_record": {
+          "abstentions": 0,
+          "hits": 6
+        },
+        "negative": {
+          "abstentions": 23,
+          "hits": 0
+        },
+        "nonobvious_success": {
+          "abstentions": 0,
+          "hits": 5
+        },
+        "paraphrase": {
+          "abstentions": 0,
+          "hits": 15
+        },
+        "path_symbol_command": {
+          "abstentions": 0,
+          "hits": 9
+        },
+        "provenance": {
+          "abstentions": 0,
+          "hits": 2
+        },
+        "short_identifier": {
+          "abstentions": 0,
+          "hits": 7
+        },
+        "similar_project": {
+          "abstentions": 0,
+          "hits": 7
+        },
+        "stale_source": {
+          "abstentions": 0,
+          "hits": 6
+        },
+        "temporal": {
+          "abstentions": 0,
+          "hits": 4
+        },
+        "trajectory": {
+          "abstentions": 0,
+          "hits": 6
+        },
+        "valid_after_unrelated_commit": {
+          "abstentions": 0,
+          "hits": 5
+        },
+        "version": {
+          "abstentions": 0,
+          "hits": 6
+        },
+        "worktree": {
+          "abstentions": 0,
+          "hits": 6
+        }
+      },
+      "leakage_violations": 0,
+      "mean_result_bytes": 832.618,
+      "stale_instruction_violations": 0
+    }
+  },
+  "heldout": {
+    "default": {
+      "categories": {
+        "contradiction": {
+          "abstentions": 0,
+          "hits": 4
+        },
+        "duplicate": {
+          "abstentions": 0,
+          "hits": 4
+        },
+        "exact_identifier": {
+          "abstentions": 0,
+          "hits": 12
+        },
+        "id_collision": {
+          "abstentions": 0,
+          "hits": 4
+        },
+        "injection": {
+          "abstentions": 0,
+          "hits": 1
+        },
+        "malformed": {
+          "abstentions": 0,
+          "hits": 3
+        },
+        "multi_record": {
+          "abstentions": 0,
+          "hits": 6
+        },
+        "negative": {
+          "abstentions": 24,
+          "hits": 0
+        },
+        "nonobvious_success": {
+          "abstentions": 0,
+          "hits": 2
+        },
+        "paraphrase": {
+          "abstentions": 0,
+          "hits": 3
+        },
+        "path_symbol_command": {
+          "abstentions": 0,
+          "hits": 9
+        },
+        "provenance": {
+          "abstentions": 0,
+          "hits": 1
+        },
+        "short_identifier": {
+          "abstentions": 0,
+          "hits": 5
+        },
+        "similar_project": {
+          "abstentions": 0,
+          "hits": 3
+        },
+        "stale_source": {
+          "abstentions": 0,
+          "hits": 6
+        },
+        "temporal": {
+          "abstentions": 0,
+          "hits": 2
+        },
+        "trajectory": {
+          "abstentions": 0,
+          "hits": 3
+        },
+        "valid_after_unrelated_commit": {
+          "abstentions": 0,
+          "hits": 5
+        },
+        "version": {
+          "abstentions": 0,
+          "hits": 3
+        },
+        "worktree": {
+          "abstentions": 0,
+          "hits": 3
+        }
+      },
+      "leakage_violations": 0,
+      "mean_result_bytes": 767.723,
+      "stale_instruction_violations": 0
+    },
+    "retries": {
+      "categories": {
+        "contradiction": {
+          "abstentions": 0,
+          "hits": 6
+        },
+        "duplicate": {
+          "abstentions": 0,
+          "hits": 4
+        },
+        "exact_identifier": {
+          "abstentions": 0,
+          "hits": 12
+        },
+        "id_collision": {
+          "abstentions": 0,
+          "hits": 4
+        },
+        "injection": {
+          "abstentions": 0,
+          "hits": 2
+        },
+        "malformed": {
+          "abstentions": 0,
+          "hits": 3
+        },
+        "multi_record": {
+          "abstentions": 0,
+          "hits": 6
+        },
+        "negative": {
+          "abstentions": 24,
+          "hits": 0
+        },
+        "nonobvious_success": {
+          "abstentions": 0,
+          "hits": 2
+        },
+        "paraphrase": {
+          "abstentions": 0,
+          "hits": 10
+        },
+        "path_symbol_command": {
+          "abstentions": 0,
+          "hits": 9
+        },
+        "provenance": {
+          "abstentions": 0,
+          "hits": 1
+        },
+        "short_identifier": {
+          "abstentions": 0,
+          "hits": 5
+        },
+        "similar_project": {
+          "abstentions": 0,
+          "hits": 5
+        },
+        "stale_source": {
+          "abstentions": 0,
+          "hits": 6
+        },
+        "temporal": {
+          "abstentions": 0,
+          "hits": 2
+        },
+        "trajectory": {
+          "abstentions": 0,
+          "hits": 4
+        },
+        "valid_after_unrelated_commit": {
+          "abstentions": 0,
+          "hits": 5
+        },
+        "version": {
+          "abstentions": 0,
+          "hits": 3
+        },
+        "worktree": {
+          "abstentions": 0,
+          "hits": 5
+        }
+      },
+      "leakage_violations": 0,
+      "mean_result_bytes": 767.723,
+      "stale_instruction_violations": 0
+    }
+  },
+  "heldout-2": {
+    "default": {
+      "categories": {
+        "contradiction": {
+          "abstentions": 0,
+          "hits": 1
+        },
+        "exact_identifier": {
+          "abstentions": 0,
+          "hits": 5
+        },
+        "id_collision": {
+          "abstentions": 0,
+          "hits": 1
+        },
+        "injection": {
+          "abstentions": 0,
+          "hits": 2
+        },
+        "multi_record": {
+          "abstentions": 0,
+          "hits": 0
+        },
+        "negative": {
+          "abstentions": 21,
+          "hits": 0
+        },
+        "paraphrase": {
+          "abstentions": 0,
+          "hits": 1
+        },
+        "path_symbol_command": {
+          "abstentions": 0,
+          "hits": 5
+        },
+        "short_identifier": {
+          "abstentions": 0,
+          "hits": 4
+        },
+        "similar_project": {
+          "abstentions": 0,
+          "hits": 3
+        },
+        "stale_source": {
+          "abstentions": 0,
+          "hits": 1
+        },
+        "trajectory": {
+          "abstentions": 0,
+          "hits": 0
+        },
+        "version": {
+          "abstentions": 0,
+          "hits": 0
+        },
+        "worktree": {
+          "abstentions": 0,
+          "hits": 1
+        }
+      },
+      "leakage_violations": 0,
+      "mean_result_bytes": 549.875,
+      "stale_instruction_violations": 0
+    },
+    "retries": {
+      "categories": {
+        "contradiction": {
+          "abstentions": 0,
+          "hits": 2
+        },
+        "exact_identifier": {
+          "abstentions": 0,
+          "hits": 5
+        },
+        "id_collision": {
+          "abstentions": 0,
+          "hits": 1
+        },
+        "injection": {
+          "abstentions": 0,
+          "hits": 2
+        },
+        "multi_record": {
+          "abstentions": 0,
+          "hits": 2
+        },
+        "negative": {
+          "abstentions": 21,
+          "hits": 0
+        },
+        "paraphrase": {
+          "abstentions": 0,
+          "hits": 19
+        },
+        "path_symbol_command": {
+          "abstentions": 0,
+          "hits": 5
+        },
+        "short_identifier": {
+          "abstentions": 0,
+          "hits": 4
+        },
+        "similar_project": {
+          "abstentions": 0,
+          "hits": 3
+        },
+        "stale_source": {
+          "abstentions": 0,
+          "hits": 3
+        },
+        "trajectory": {
+          "abstentions": 0,
+          "hits": 3
+        },
+        "version": {
+          "abstentions": 0,
+          "hits": 1
+        },
+        "worktree": {
+          "abstentions": 0,
+          "hits": 1
+        }
+      },
+      "leakage_violations": 0,
+      "mean_result_bytes": 549.875,
+      "stale_instruction_violations": 0
+    }
+  }
+}

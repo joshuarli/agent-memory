@@ -19,6 +19,7 @@ from urllib.parse import quote
 ROOT = Path(__file__).resolve().parents[1]
 SRC_DIR = ROOT / "src"
 FIXTURES = ROOT / "eval" / "recall-fixtures"
+BASELINE_PATH = ROOT / "eval" / "recall-baseline.json"
 WORK_TMP = ROOT / ".work" / "tmp"
 SPLITS = ("dev", "heldout", "heldout-2")
 HARNESSES = ("codex", "claude", "muse", "grok")
@@ -424,6 +425,22 @@ def aggregate(per_case):
     return summary
 
 
+def category_counts(per_case):
+    counts = {}
+    for case, metrics in per_case:
+        row = counts.setdefault(case["category"], {"hits": 0, "abstentions": 0})
+        if case["expect"] == "match":
+            row["hits"] += int(metrics.get("recall5") or 0)
+        else:
+            row["abstentions"] += int(metrics.get("abstain_correct") or 0)
+    return dict(sorted(counts.items()))
+
+
+def mean_result_bytes(sizes):
+    nonempty = [size for size in sizes if size]
+    return round(sum(nonempty) / len(nonempty), 3) if nonempty else None
+
+
 class LegacySystem:
     name = "legacy-recall"
 
@@ -615,7 +632,7 @@ def run_systems(split, names, limit=5, repeats=1, haystack=0, retries=None) -> d
                 systems.append(RecallSystem(world, learner, weak=True))
         cases = world.fixture["cases"]
         for system in systems:
-            per_case, timings, chars, details, retried = [], [], [], {}, []
+            per_case, timings, chars, details, retried, sizes = [], [], [], {}, [], []
             for case in cases:
                 best = None
                 found: list[Any] = []
@@ -632,6 +649,7 @@ def run_systems(split, names, limit=5, repeats=1, haystack=0, retries=None) -> d
                                         "memories": item.get("memories"), "score": item.get("score")} for item in found[:5]]
                 timings.append(best)
                 chars.append(sum(item["chars"] for item in found[:3]))
+                sizes.append(sum(item["chars"] for item in found))
             summary = aggregate(per_case)
             summary["context_chars_avg"] = sum(chars) / max(1, len(chars))
             summary["latency_ms_median"] = statistics.median(timings) * 1000
@@ -640,8 +658,11 @@ def run_systems(split, names, limit=5, repeats=1, haystack=0, retries=None) -> d
             for case, metrics in per_case:
                 by_category.setdefault(case["category"], []).append((case, metrics))
             summary["by_category"] = {key: aggregate(value) for key, value in sorted(by_category.items())}
+            summary["category_counts"] = category_counts(per_case)
+            summary["mean_result_bytes"] = mean_result_bytes(sizes)
             if retried:
                 summary["after_one_retry"] = aggregate(retried)
+                summary["after_one_retry_category_counts"] = category_counts(retried)
                 summary["retries_used"] = sum(1 for case, _ in per_case if retries.get(case["id"]) and not details[case["id"]])
             summary["details"] = details
             summary["failures"] = [case["id"] for case, m in per_case if (case["expect"] == "match" and not m["recall5"]) or (case["expect"] == "abstain" and not m["abstain_correct"])]
@@ -709,6 +730,76 @@ def explain_cases(split, case_ids, haystack=0):
         store.close()
 
 
+def gate_mode(split, retries):
+    result = run_systems(split, ["new"], repeats=1, haystack=0, retries=retries)
+    summary = result["new-recall"]
+    source = summary if retries is None else summary["after_one_retry"]
+    categories = summary["category_counts"] if retries is None else summary["after_one_retry_category_counts"]
+    return {
+        "categories": categories,
+        "leakage_violations": source["leakage_violations"],
+        "stale_instruction_violations": source["stale_instruction_violations"],
+        "mean_result_bytes": summary["mean_result_bytes"],
+    }
+
+
+def gate_report():
+    report = {}
+    for split in SPLITS:
+        retries = json.loads((FIXTURES / (split + "-retries.json")).read_text())
+        report[split] = {"default": gate_mode(split, None), "retries": gate_mode(split, retries)}
+    return report
+
+
+def _differences(baseline, current):
+    regressions, improvements = [], []
+    for split in sorted(set(baseline) | set(current)):
+        if split not in current:
+            regressions.append("%s: split missing in current" % split)
+            continue
+        if split not in baseline:
+            regressions.append("%s: split missing in baseline" % split)
+            continue
+        for mode in sorted(set(baseline[split]) | set(current[split])):
+            if mode not in current[split]:
+                regressions.append("%s %s: mode missing in current" % (split, mode))
+                continue
+            if mode not in baseline[split]:
+                regressions.append("%s %s: mode missing in baseline" % (split, mode))
+                continue
+            before, after = baseline[split][mode], current[split][mode]
+            for key, label in (("leakage_violations", "leakage violations"), ("stale_instruction_violations", "stale instruction violations")):
+                if after[key] > before[key]:
+                    regressions.append("%s %s: %s rose %d -> %d" % (split, mode, label, before[key], after[key]))
+                elif after[key] < before[key]:
+                    improvements.append("%s %s: %s fell %d -> %d" % (split, mode, label, before[key], after[key]))
+            old_bytes, new_bytes = before["mean_result_bytes"], after["mean_result_bytes"]
+            if old_bytes is None and new_bytes is not None:
+                regressions.append("%s %s: mean result bytes appeared (%s)" % (split, mode, new_bytes))
+            elif new_bytes is None and old_bytes is not None:
+                regressions.append("%s %s: mean result bytes disappeared (%s)" % (split, mode, old_bytes))
+            elif new_bytes is not None and new_bytes > old_bytes * 1.1:
+                regressions.append("%s %s: mean result bytes grew %.3f -> %.3f" % (split, mode, old_bytes, new_bytes))
+            for category in sorted(set(before["categories"]) | set(after["categories"])):
+                if category not in after["categories"]:
+                    regressions.append("%s %s %s: category missing in current" % (split, mode, category))
+                    continue
+                if category not in before["categories"]:
+                    regressions.append("%s %s %s: category missing in baseline" % (split, mode, category))
+                    continue
+                old_counts, new_counts = before["categories"][category], after["categories"][category]
+                for metric in ("hits", "abstentions"):
+                    if new_counts[metric] < old_counts[metric]:
+                        regressions.append("%s %s %s: %s dropped %d -> %d" % (split, mode, category, metric, old_counts[metric], new_counts[metric]))
+                    elif new_counts[metric] > old_counts[metric]:
+                        improvements.append("%s %s %s: %s improved %d -> %d" % (split, mode, category, metric, old_counts[metric], new_counts[metric]))
+    return regressions, improvements
+
+
+def compare(baseline, current) -> list[str]:
+    return _differences(baseline, current)[0]
+
+
 def main(argv=None):
     cli = argparse.ArgumentParser(description=__doc__)
     commands = cli.add_subparsers(dest="command", metavar="command")
@@ -728,10 +819,26 @@ def main(argv=None):
     requests = commands.add_parser("retry-requests", help="print the abstained cases an agent would be asked to retry")
     requests.add_argument("--split", choices=SPLITS, default="dev")
     requests.add_argument("--haystack", type=int, default=0)
+    gate = commands.add_parser("gate", help="compare recall counts against the committed baseline")
+    gate.add_argument("--record", action="store_true", help="write the current counts to the baseline")
     args = cli.parse_args(argv)
     if args.command is None:
         cli.print_help()
         return 2
+    if args.command == "gate":
+        if args.record:
+            BASELINE_PATH.write_text(json.dumps(gate_report(), sort_keys=True, indent=2) + "\n")
+            print("recorded " + str(BASELINE_PATH.relative_to(ROOT)))
+            return 0
+        regressions, improvements = _differences(json.loads(BASELINE_PATH.read_text()), gate_report())
+        for line in improvements:
+            print("improved: " + line)
+        for line in regressions:
+            print("regression: " + line)
+        if regressions:
+            return 1
+        print("gate: no regressions")
+        return 0
     if args.command == "validate":
         bad = 0
         for split in SPLITS:
