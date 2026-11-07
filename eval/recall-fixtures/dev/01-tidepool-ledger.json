@@ -279,6 +279,9 @@
  ],
  "cases": [
   {
+   "answer": [
+    "copy the keys under the shard lock"
+   ],
    "id": "tp-c1",
    "split": "dev",
    "category": "exact_identifier",
@@ -296,6 +299,9 @@
    ]
   },
   {
+   "answer": [
+    "OrderedDict mutated during iteration"
+   ],
    "id": "tp-c2",
    "split": "dev",
    "category": "paraphrase",
@@ -313,6 +319,9 @@
    ]
   },
   {
+   "answer": [
+    "copy the keys under the shard lock"
+   ],
    "id": "tp-c3",
    "split": "dev",
    "category": "worktree",
@@ -327,6 +336,9 @@
    ]
   },
   {
+   "answer": [
+    "snapshots keys under the shard lock"
+   ],
    "id": "tp-c4",
    "split": "dev",
    "category": "worktree",
@@ -378,6 +390,9 @@
    ]
   },
   {
+   "answer": [
+    "15x slower"
+   ],
    "id": "lg-c1",
    "split": "dev",
    "category": "exact_identifier",
@@ -392,6 +407,9 @@
    ]
   },
   {
+   "answer": [
+    "19.99499999"
+   ],
    "id": "lg-c2",
    "split": "dev",
    "category": "stale_source",
@@ -409,6 +427,9 @@
    ]
   },
   {
+   "answer": [
+    "integer cents from the parser"
+   ],
    "id": "lg-c3",
    "split": "dev",
    "category": "contradiction",
@@ -426,6 +447,9 @@
    ]
   },
   {
+   "answer": [
+    "not adopting rust_decimal"
+   ],
    "id": "lg-c4",
    "split": "dev",
    "category": "trajectory",
@@ -440,6 +464,9 @@
    ]
   },
   {
+   "answer": [
+    "ISO 4217"
+   ],
    "id": "lg-c5",
    "split": "dev",
    "category": "nonobvious_success",
@@ -476,6 +503,9 @@
    ]
   },
   {
+   "answer": [
+    "19.99499999"
+   ],
    "id": "lg-c8",
    "split": "dev",
    "category": "temporal",

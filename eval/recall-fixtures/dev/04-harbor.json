@@ -404,6 +404,9 @@
  ],
  "cases": [
   {
+   "answer": [
+    "3.3.7"
+   ],
    "id": "hb-c1",
    "split": "dev",
    "category": "exact_identifier",
@@ -423,6 +426,9 @@
    ]
   },
   {
+   "answer": [
+    "ESM-only"
+   ],
    "id": "hb-c2",
    "split": "dev",
    "category": "duplicate",
@@ -439,6 +445,9 @@
    ]
   },
   {
+   "answer": [
+    "3.3.7"
+   ],
    "id": "hb-c3",
    "split": "dev",
    "category": "version",
@@ -455,6 +464,9 @@
    ]
   },
   {
+   "answer": [
+    "ESM-only"
+   ],
    "id": "hb-c4",
    "split": "dev",
    "category": "worktree",
@@ -472,6 +484,9 @@
    ]
   },
   {
+   "answer": [
+    "127.0.0.1"
+   ],
    "id": "hb-c5",
    "split": "dev",
    "category": "worktree",
@@ -489,6 +504,9 @@
    ]
   },
   {
+   "answer": [
+    "127.0.0.1"
+   ],
    "id": "hb-c6",
    "split": "dev",
    "category": "worktree",
@@ -504,6 +522,9 @@
    ]
   },
   {
+   "answer": [
+    "IPv4 only"
+   ],
    "id": "hb-c7",
    "split": "dev",
    "category": "paraphrase",
@@ -521,6 +542,9 @@
    ]
   },
   {
+   "answer": [
+    "127.0.0.1"
+   ],
    "id": "hb-c8",
    "split": "dev",
    "category": "exact_identifier",
@@ -535,6 +559,9 @@
    ]
   },
   {
+   "answer": [
+    "tsc -b"
+   ],
    "id": "hb-c9",
    "split": "dev",
    "category": "trajectory",
@@ -546,6 +573,9 @@
    ]
   },
   {
+   "answer": [
+    "module nodenext"
+   ],
    "id": "hb-c10",
    "split": "dev",
    "category": "nonobvious_success",
@@ -560,6 +590,9 @@
    ]
   },
   {
+   "answer": [
+    "renderHook"
+   ],
    "id": "hb-c11",
    "split": "dev",
    "category": "injection",
@@ -571,6 +604,9 @@
    ]
   },
   {
+   "answer": [
+    "renderHook"
+   ],
    "id": "hb-c12",
    "split": "dev",
    "category": "injection",
@@ -615,6 +651,11 @@
    ]
   },
   {
+   "answer": [
+    "3.3.7",
+    "127.0.0.1",
+    "renderHook"
+   ],
    "id": "hb-c16",
    "split": "dev",
    "category": "multi_record",
@@ -647,6 +688,9 @@
    ]
   },
   {
+   "answer": [
+    "127.0.0.1"
+   ],
    "id": "hb-c17",
    "split": "dev",
    "category": "path_symbol_command",
@@ -661,6 +705,9 @@
    ]
   },
   {
+   "answer": [
+    "ESM-only"
+   ],
    "id": "hb-c18",
    "split": "dev",
    "category": "provenance",
@@ -675,6 +722,9 @@
    ]
   },
   {
+   "answer": [
+    "emitted path"
+   ],
    "id": "hb-c19",
    "split": "dev",
    "category": "id_collision",
@@ -689,6 +739,9 @@
    ]
   },
   {
+   "answer": [
+    "TIDEPOOL_SHARDS=4"
+   ],
    "id": "tp-c8",
    "split": "dev",
    "category": "valid_after_unrelated_commit",

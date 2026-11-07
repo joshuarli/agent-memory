@@ -228,6 +228,9 @@
  ],
  "cases": [
   {
+   "answer": [
+    "9.0.0"
+   ],
    "id": "vl-c1",
    "split": "dev",
    "category": "version",
@@ -248,6 +251,9 @@
    ]
   },
   {
+   "answer": [
+    "9.0.0"
+   ],
    "id": "vl-c2",
    "split": "dev",
    "category": "exact_identifier",
@@ -268,6 +274,9 @@
    ]
   },
   {
+   "answer": [
+    ">=18"
+   ],
    "id": "vl-c3",
    "split": "dev",
    "category": "version",
@@ -279,6 +288,9 @@
    ]
   },
   {
+   "answer": [
+    "9.2.2"
+   ],
    "id": "vl-c4",
    "split": "dev",
    "category": "valid_after_unrelated_commit",
@@ -296,6 +308,9 @@
    ]
   },
   {
+   "answer": [
+    "2.42x faster"
+   ],
    "id": "vl-c5",
    "split": "dev",
    "category": "trajectory",
@@ -332,6 +347,9 @@
    ]
   },
   {
+   "answer": [
+    "ESM-only"
+   ],
    "id": "vl-c8",
    "split": "dev",
    "category": "paraphrase",
@@ -349,6 +367,9 @@
    ]
   },
   {
+   "answer": [
+    "9.0.0"
+   ],
    "id": "vl-c9",
    "split": "dev",
    "category": "id_collision",
@@ -363,6 +384,9 @@
    ]
   },
   {
+   "answer": [
+    "Node 17"
+   ],
    "id": "vl-c10",
    "split": "dev",
    "category": "provenance",
@@ -374,6 +398,9 @@
    ]
   },
   {
+   "answer": [
+    "JSON.stringify"
+   ],
    "id": "vl-c11",
    "split": "dev",
    "category": "nonobvious_success",

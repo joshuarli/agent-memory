@@ -448,6 +448,9 @@
  ],
  "cases": [
   {
+   "answer": [
+    "../orbit-core"
+   ],
    "id": "oi-c1",
    "split": "dev",
    "category": "similar_project",
@@ -465,6 +468,9 @@
    ]
   },
   {
+   "answer": [
+    "pythonpath = src"
+   ],
    "id": "oe-c1",
    "split": "dev",
    "category": "similar_project",
@@ -485,6 +491,9 @@
    ]
   },
   {
+   "answer": [
+    "deps target"
+   ],
    "id": "oi-c2",
    "split": "dev",
    "category": "short_identifier",
@@ -502,6 +511,9 @@
    ]
   },
   {
+   "answer": [
+    "413"
+   ],
    "id": "oi-c3",
    "split": "dev",
    "category": "exact_identifier",
@@ -519,6 +531,9 @@
    ]
   },
   {
+   "answer": [
+    "413"
+   ],
    "id": "oi-c4",
    "split": "dev",
    "category": "malformed",
@@ -533,6 +548,9 @@
    ]
   },
   {
+   "answer": [
+    "6% of wall time"
+   ],
    "id": "oi-c5",
    "split": "dev",
    "category": "trajectory",
@@ -550,6 +568,9 @@
    ]
   },
   {
+   "answer": [
+    "413"
+   ],
    "id": "oi-c6",
    "split": "dev",
    "category": "valid_after_unrelated_commit",
@@ -586,6 +607,10 @@
    ]
   },
   {
+   "answer": [
+    "deps target",
+    "413"
+   ],
    "id": "oi-c9",
    "split": "dev",
    "category": "multi_record",
@@ -608,6 +633,9 @@
    ]
   },
   {
+   "answer": [
+    "upstream HTTP fetch"
+   ],
    "id": "oi-c10",
    "split": "dev",
    "category": "paraphrase",
@@ -622,6 +650,9 @@
    ]
   },
   {
+   "answer": [
+    "../orbit-core"
+   ],
    "id": "oi-c11",
    "split": "dev",
    "category": "paraphrase",
@@ -639,6 +670,9 @@
    ]
   },
   {
+   "answer": [
+    "date_format"
+   ],
    "id": "oe-c2",
    "split": "dev",
    "category": "contradiction",
@@ -653,6 +687,9 @@
    ]
   },
   {
+   "answer": [
+    "date_format"
+   ],
    "id": "oe-c3",
    "split": "dev",
    "category": "temporal",
@@ -667,6 +704,9 @@
    ]
   },
   {
+   "answer": [
+    "pythonpath = src"
+   ],
    "id": "oe-c4",
    "split": "dev",
    "category": "stale_source",
@@ -684,6 +724,9 @@
    ]
   },
   {
+   "answer": [
+    "pythonpath = src"
+   ],
    "id": "oe-c5",
    "split": "dev",
    "category": "path_symbol_command",
@@ -712,6 +755,9 @@
    ]
   },
   {
+   "answer": [
+    "pandas 2"
+   ],
    "id": "oe-c7",
    "split": "dev",
    "category": "exact_identifier",

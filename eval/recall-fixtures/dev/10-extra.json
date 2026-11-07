@@ -5,6 +5,9 @@
  "mutations": [],
  "cases": [
   {
+   "answer": [
+    "3.3.7"
+   ],
    "id": "x-dup1",
    "split": "dev",
    "category": "duplicate",
@@ -21,6 +24,9 @@
    ]
   },
   {
+   "answer": [
+    "POSIX [ ] tests"
+   ],
    "id": "x-dup2",
    "split": "dev",
    "category": "duplicate",
@@ -36,6 +42,9 @@
    ]
   },
   {
+   "answer": [
+    "OOM killed"
+   ],
    "id": "x-con1",
    "split": "dev",
    "category": "contradiction",
@@ -53,6 +62,9 @@
    ]
   },
   {
+   "answer": [
+    "9.0.0"
+   ],
    "id": "x-con2",
    "split": "dev",
    "category": "contradiction",
@@ -70,6 +82,9 @@
    ]
   },
   {
+   "answer": [
+    "pythonpath = src"
+   ],
    "id": "x-sim1",
    "split": "dev",
    "category": "similar_project",
@@ -90,6 +105,9 @@
    ]
   },
   {
+   "answer": [
+    "was only in CFLAGS"
+   ],
    "id": "x-sim2",
    "split": "dev",
    "category": "similar_project",
@@ -107,6 +125,9 @@
    ]
   },
   {
+   "answer": [
+    "--as-needed"
+   ],
    "id": "x-sim3",
    "split": "dev",
    "category": "similar_project",
@@ -127,6 +148,9 @@
    ]
   },
   {
+   "answer": [
+    "3.3.7"
+   ],
    "id": "x-sh1",
    "split": "dev",
    "category": "short_identifier",
@@ -149,6 +173,9 @@
    ]
   },
   {
+   "answer": [
+    "9.0.0"
+   ],
    "id": "x-sh2",
    "split": "dev",
    "category": "short_identifier",
@@ -169,6 +196,9 @@
    ]
   },
   {
+   "answer": [
+    "TIDEPOOL_SHARDS=4"
+   ],
    "id": "x-sh3",
    "split": "dev",
    "category": "short_identifier",
@@ -186,6 +216,9 @@
    ]
   },
   {
+   "answer": [
+    "pythonpath = src"
+   ],
    "id": "x-sh4",
    "split": "dev",
    "category": "short_identifier",
@@ -206,6 +239,10 @@
    ]
   },
   {
+   "answer": [
+    "TIDEPOOL_SHARDS=4",
+    "copy the keys under the shard lock"
+   ],
    "id": "x-mr1",
    "split": "dev",
    "category": "multi_record",
@@ -229,6 +266,10 @@
    ]
   },
   {
+   "answer": [
+    "net feature",
+    "println! logging"
+   ],
    "id": "x-mr2",
    "split": "dev",
    "category": "multi_record",
@@ -256,6 +297,9 @@
    ]
   },
   {
+   "answer": [
+    "copy the keys under the shard lock"
+   ],
    "id": "x-p1",
    "split": "dev",
    "category": "path_symbol_command",
@@ -270,6 +314,9 @@
    ]
   },
   {
+   "answer": [
+    "900MiB"
+   ],
    "id": "x-p2",
    "split": "dev",
    "category": "path_symbol_command",
@@ -284,6 +331,9 @@
    ]
   },
   {
+   "answer": [
+    "println! logging"
+   ],
    "id": "x-p3",
    "split": "dev",
    "category": "path_symbol_command",
@@ -295,6 +345,9 @@
    ]
   },
   {
+   "answer": [
+    "dry-run pass"
+   ],
    "id": "x-p4",
    "split": "dev",
    "category": "path_symbol_command",
@@ -306,6 +359,9 @@
    ]
   },
   {
+   "answer": [
+    "os.cpu_count()"
+   ],
    "id": "x-pa1",
    "split": "dev",
    "category": "paraphrase",
@@ -320,6 +376,9 @@
    ]
   },
   {
+   "answer": [
+    "19.99499999"
+   ],
    "id": "x-pa2",
    "split": "dev",
    "category": "paraphrase",
@@ -337,6 +396,9 @@
    ]
   },
   {
+   "answer": [
+    "413"
+   ],
    "id": "x-pa3",
    "split": "dev",
    "category": "paraphrase",
@@ -351,6 +413,9 @@
    ]
   },
   {
+   "answer": [
+    "date_format"
+   ],
    "id": "x-pa4",
    "split": "dev",
    "category": "paraphrase",
@@ -365,6 +430,9 @@
    ]
   },
   {
+   "answer": [
+    "gated by a flags bit"
+   ],
    "id": "x-pa5",
    "split": "dev",
    "category": "paraphrase",
@@ -376,6 +444,9 @@
    ]
   },
   {
+   "answer": [
+    "millisecond timeouts"
+   ],
    "id": "x-pa6",
    "split": "dev",
    "category": "paraphrase",
@@ -390,6 +461,9 @@
    ]
   },
   {
+   "answer": [
+    "tsc -b"
+   ],
    "id": "x-pa7",
    "split": "dev",
    "category": "paraphrase",
@@ -401,6 +475,9 @@
    ]
   },
   {
+   "answer": [
+    "ESM-only"
+   ],
    "id": "x-pa8",
    "split": "dev",
    "category": "paraphrase",
@@ -417,6 +494,9 @@
    ]
   },
   {
+   "answer": [
+    "SIGBUS"
+   ],
    "id": "x-pa9",
    "split": "dev",
    "category": "paraphrase",
@@ -428,6 +508,9 @@
    ]
   },
   {
+   "answer": [
+    "source mount was missing"
+   ],
    "id": "x-pa10",
    "split": "dev",
    "category": "paraphrase",
@@ -439,6 +522,9 @@
    ]
   },
   {
+   "answer": [
+    "Make it async"
+   ],
    "id": "x-pa11",
    "split": "dev",
    "category": "paraphrase",
@@ -453,6 +539,9 @@
    ]
   },
   {
+   "answer": [
+    "Node 17"
+   ],
    "id": "x-pa12",
    "split": "dev",
    "category": "paraphrase",
@@ -464,6 +553,9 @@
    ]
   },
   {
+   "answer": [
+    "manylinux wheels"
+   ],
    "id": "x-pa13",
    "split": "dev",
    "category": "paraphrase",
@@ -475,6 +567,9 @@
    ]
   },
   {
+   "answer": [
+    "pattern"
+   ],
    "id": "x-pa14",
    "split": "dev",
    "category": "paraphrase",

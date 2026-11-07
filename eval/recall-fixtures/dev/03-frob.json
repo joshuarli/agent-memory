@@ -300,6 +300,9 @@
  ],
  "cases": [
   {
+   "answer": [
+    "--as-needed"
+   ],
    "id": "lf-c1",
    "split": "dev",
    "category": "similar_project",
@@ -320,6 +323,9 @@
    ]
   },
   {
+   "answer": [
+    "was only in CFLAGS"
+   ],
    "id": "fd-c1",
    "split": "dev",
    "category": "similar_project",
@@ -337,6 +343,9 @@
    ]
   },
   {
+   "answer": [
+    "--as-needed"
+   ],
    "id": "lf-c2",
    "split": "dev",
    "category": "stale_source",
@@ -354,6 +363,9 @@
    ]
   },
   {
+   "answer": [
+    "gated by a flags bit"
+   ],
    "id": "lf-c3",
    "split": "dev",
    "category": "paraphrase",
@@ -368,6 +380,9 @@
    ]
   },
   {
+   "answer": [
+    "may only be appended"
+   ],
    "id": "lf-c4",
    "split": "dev",
    "category": "nonobvious_success",
@@ -379,6 +394,9 @@
    ]
   },
   {
+   "answer": [
+    "Null the pointer after free"
+   ],
    "id": "lf-c5",
    "split": "dev",
    "category": "exact_identifier",
@@ -415,6 +433,9 @@
    ]
   },
   {
+   "answer": [
+    "--as-needed"
+   ],
    "id": "lf-c8",
    "split": "dev",
    "category": "paraphrase",
@@ -435,6 +456,9 @@
    ]
   },
   {
+   "answer": [
+    "heap-use-after-free"
+   ],
    "id": "lf-c9",
    "split": "dev",
    "category": "paraphrase",
@@ -446,6 +470,9 @@
    ]
   },
   {
+   "answer": [
+    "RHEL 7"
+   ],
    "id": "fd-c2",
    "split": "dev",
    "category": "trajectory",
@@ -463,6 +490,9 @@
    ]
   },
   {
+   "answer": [
+    "RHEL 7"
+   ],
    "id": "fd-c3",
    "split": "dev",
    "category": "version",
@@ -477,6 +507,9 @@
    ]
   },
   {
+   "answer": [
+    "kernel 3.10"
+   ],
    "id": "fd-c4",
    "split": "dev",
    "category": "stale_source",
@@ -491,6 +524,9 @@
    ]
   },
   {
+   "answer": [
+    "was only in CFLAGS"
+   ],
    "id": "fd-c5",
    "split": "dev",
    "category": "paraphrase",
@@ -519,6 +555,9 @@
    ]
   },
   {
+   "answer": [
+    "glibc 2.31"
+   ],
    "id": "fd-c7",
    "split": "dev",
    "category": "path_symbol_command",

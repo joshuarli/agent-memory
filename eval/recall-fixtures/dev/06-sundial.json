@@ -322,6 +322,9 @@
  ],
  "cases": [
   {
+   "answer": [
+    "POSIX [ ] tests"
+   ],
    "id": "sd-c1",
    "split": "dev",
    "category": "exact_identifier",
@@ -340,6 +343,9 @@
    ]
   },
   {
+   "answer": [
+    "POSIX [ ] tests"
+   ],
    "id": "sd-c2",
    "split": "dev",
    "category": "duplicate",
@@ -355,6 +361,9 @@
    ]
   },
   {
+   "answer": [
+    "launchd job also invokes sh"
+   ],
    "id": "sd-c3",
    "split": "dev",
    "category": "stale_source",
@@ -369,6 +378,9 @@
    ]
   },
   {
+   "answer": [
+    "temp file and mv"
+   ],
    "id": "sd-c4",
    "split": "dev",
    "category": "path_symbol_command",
@@ -383,6 +395,9 @@
    ]
   },
   {
+   "answer": [
+    "temp file and mv"
+   ],
    "id": "sd-c5",
    "split": "dev",
    "category": "paraphrase",
@@ -394,6 +409,9 @@
    ]
   },
   {
+   "answer": [
+    "temp file and mv"
+   ],
    "id": "sd-c6",
    "split": "dev",
    "category": "id_collision",
@@ -408,6 +426,9 @@
    ]
   },
   {
+   "answer": [
+    "mountpoint guard"
+   ],
    "id": "sd-c7",
    "split": "dev",
    "category": "trajectory",
@@ -422,6 +443,9 @@
    ]
   },
   {
+   "answer": [
+    "mountpoint guard"
+   ],
    "id": "sd-c8",
    "split": "dev",
    "category": "malformed",
@@ -433,6 +457,9 @@
    ]
   },
   {
+   "answer": [
+    "mkdir lock directory"
+   ],
    "id": "sd-c9",
    "split": "dev",
    "category": "nonobvious_success",
@@ -466,6 +493,11 @@
    ]
   },
   {
+   "answer": [
+    "POSIX [ ] tests",
+    "temp file and mv",
+    "mkdir lock directory"
+   ],
    "id": "sd-c12",
    "split": "dev",
    "category": "multi_record",
@@ -495,6 +527,9 @@
    ]
   },
   {
+   "answer": [
+    "mountpoint"
+   ],
    "id": "sd-c13",
    "split": "dev",
    "category": "contradiction",

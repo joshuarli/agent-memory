@@ -303,6 +303,9 @@
  ],
  "cases": [
   {
+   "answer": [
+    "pattern"
+   ],
    "id": "ms-c1",
    "split": "dev",
    "category": "version",
@@ -320,6 +323,9 @@
    ]
   },
   {
+   "answer": [
+    "np.float64"
+   ],
    "id": "ms-c2",
    "split": "dev",
    "category": "exact_identifier",
@@ -331,6 +337,9 @@
    ]
   },
   {
+   "answer": [
+    "np.float64"
+   ],
    "id": "ms-c3",
    "split": "dev",
    "category": "version",
@@ -342,6 +351,9 @@
    ]
   },
   {
+   "answer": [
+    "tmp_path_factory"
+   ],
    "id": "ms-c4",
    "split": "dev",
    "category": "path_symbol_command",
@@ -353,6 +365,9 @@
    ]
   },
   {
+   "answer": [
+    "tmp_path_factory"
+   ],
    "id": "ms-c5",
    "split": "dev",
    "category": "malformed",
@@ -364,6 +379,9 @@
    ]
   },
   {
+   "answer": [
+    "uv sync"
+   ],
    "id": "ms-c6",
    "split": "dev",
    "category": "trajectory",
@@ -378,6 +396,9 @@
    ]
   },
   {
+   "answer": [
+    "pattern"
+   ],
    "id": "ms-c7",
    "split": "dev",
    "category": "valid_after_unrelated_commit",
@@ -428,6 +449,10 @@
    ]
   },
   {
+   "answer": [
+    "pattern",
+    "np.float64"
+   ],
    "id": "ms-c11",
    "split": "dev",
    "category": "multi_record",
@@ -451,6 +476,9 @@
    ]
   },
   {
+   "answer": [
+    "tmp_path_factory"
+   ],
    "id": "ms-c12",
    "split": "dev",
    "category": "paraphrase",
@@ -462,6 +490,9 @@
    ]
   },
   {
+   "answer": [
+    "uv sync"
+   ],
    "id": "ms-c13",
    "split": "dev",
    "category": "paraphrase",
@@ -476,6 +507,9 @@
    ]
   },
   {
+   "answer": [
+    "uses uv"
+   ],
    "id": "ms-c14",
    "split": "dev",
    "category": "provenance",
@@ -487,6 +521,9 @@
    ]
   },
   {
+   "answer": [
+    "CDN cache key"
+   ],
    "id": "ms-c15",
    "split": "dev",
    "category": "nonobvious_success",
@@ -501,6 +538,9 @@
    ]
   },
   {
+   "answer": [
+    "manylinux wheels"
+   ],
    "id": "ms-c16",
    "split": "dev",
    "category": "injection",
@@ -512,6 +552,9 @@
    ]
   },
   {
+   "answer": [
+    "python:3.12-slim"
+   ],
    "id": "ms-c17",
    "split": "dev",
    "category": "injection",

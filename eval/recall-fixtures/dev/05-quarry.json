@@ -265,6 +265,9 @@
  ],
  "cases": [
   {
+   "answer": [
+    "GOMEMLIMIT=900MiB"
+   ],
    "id": "qr-c1",
    "split": "dev",
    "category": "short_identifier",
@@ -285,6 +288,9 @@
    ]
   },
   {
+   "answer": [
+    "GOGC=200"
+   ],
    "id": "qr-c2",
    "split": "dev",
    "category": "temporal",
@@ -302,6 +308,9 @@
    ]
   },
   {
+   "answer": [
+    "sync.RWMutex"
+   ],
    "id": "qr-c3",
    "split": "dev",
    "category": "exact_identifier",
@@ -313,6 +322,9 @@
    ]
   },
   {
+   "answer": [
+    "sync.RWMutex"
+   ],
    "id": "qr-c4",
    "split": "dev",
    "category": "worktree",
@@ -324,6 +336,9 @@
    ]
   },
   {
+   "answer": [
+    "sync.RWMutex"
+   ],
    "id": "qr-c5",
    "split": "dev",
    "category": "worktree",
@@ -336,6 +351,9 @@
    ]
   },
   {
+   "answer": [
+    "os.ReadFile"
+   ],
    "id": "qr-c6",
    "split": "dev",
    "category": "malformed",
@@ -350,6 +368,9 @@
    ]
   },
   {
+   "answer": [
+    "reference counting"
+   ],
    "id": "qr-c7",
    "split": "dev",
    "category": "trajectory",
@@ -364,6 +385,9 @@
    ]
   },
   {
+   "answer": [
+    "os.ReadFile"
+   ],
    "id": "qr-c8",
    "split": "dev",
    "category": "worktree",
@@ -376,6 +400,9 @@
    ]
   },
   {
+   "answer": [
+    "benchmark showed no win"
+   ],
    "id": "qr-c9",
    "split": "dev",
    "category": "stale_source",
@@ -423,6 +450,10 @@
    ]
   },
   {
+   "answer": [
+    "sync.RWMutex",
+    "GOMEMLIMIT=900MiB"
+   ],
    "id": "qr-c13",
    "split": "dev",
    "category": "multi_record",
@@ -446,6 +477,9 @@
    ]
   },
   {
+   "answer": [
+    "os.ReadFile"
+   ],
    "id": "qr-c14",
    "split": "dev",
    "category": "id_collision",
@@ -460,6 +494,9 @@
    ]
   },
   {
+   "answer": [
+    "GOGC=200"
+   ],
    "id": "qr-c15",
    "split": "dev",
    "category": "paraphrase",
@@ -477,6 +514,9 @@
    ]
   },
   {
+   "answer": [
+    "GOMEMLIMIT=900MiB"
+   ],
    "id": "qr-c16",
    "split": "dev",
    "category": "provenance",
@@ -491,6 +531,9 @@
    ]
   },
   {
+   "answer": [
+    "sync.RWMutex"
+   ],
    "id": "qr-c17",
    "split": "dev",
    "category": "paraphrase",

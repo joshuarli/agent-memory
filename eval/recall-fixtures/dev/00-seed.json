@@ -145,6 +145,9 @@
  "mutations": [],
  "cases": [
   {
+   "answer": [
+    "os.cpu_count()"
+   ],
    "id": "seed-1",
    "split": "dev",
    "category": "exact_identifier",
@@ -162,6 +165,9 @@
    ]
   },
   {
+   "answer": [
+    "TIDEPOOL_SHARDS=4"
+   ],
    "id": "seed-2",
    "split": "dev",
    "category": "paraphrase",
@@ -187,6 +193,9 @@
    ]
   },
   {
+   "answer": [
+    "1.0.200"
+   ],
    "id": "seed-4",
    "split": "dev",
    "category": "id_collision",

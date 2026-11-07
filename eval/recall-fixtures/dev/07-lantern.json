@@ -286,6 +286,9 @@
  ],
  "cases": [
   {
+   "answer": [
+    "net feature"
+   ],
    "id": "ln-c1",
    "split": "dev",
    "category": "exact_identifier",
@@ -305,6 +308,9 @@
    ]
   },
   {
+   "answer": [
+    "net feature"
+   ],
    "id": "ln-c2",
    "split": "dev",
    "category": "duplicate",
@@ -321,6 +327,9 @@
    ]
   },
   {
+   "answer": [
+    "println! logging"
+   ],
    "id": "ln-c3",
    "split": "dev",
    "category": "short_identifier",
@@ -335,6 +344,9 @@
    ]
   },
   {
+   "answer": [
+    "spawn_blocking"
+   ],
    "id": "ln-c4",
    "split": "dev",
    "category": "trajectory",
@@ -346,6 +358,9 @@
    ]
   },
   {
+   "answer": [
+    "Make it async"
+   ],
    "id": "ln-c5",
    "split": "dev",
    "category": "exact_identifier",
@@ -360,6 +375,9 @@
    ]
   },
   {
+   "answer": [
+    "Make it async"
+   ],
    "id": "ln-c6",
    "split": "dev",
    "category": "temporal",
@@ -374,6 +392,9 @@
    ]
   },
   {
+   "answer": [
+    "net feature"
+   ],
    "id": "ln-c7",
    "split": "dev",
    "category": "valid_after_unrelated_commit",
@@ -390,6 +411,9 @@
    ]
   },
   {
+   "answer": [
+    "spawn_blocking"
+   ],
    "id": "ln-c8",
    "split": "dev",
    "category": "contradiction",
@@ -426,6 +450,9 @@
    ]
   },
   {
+   "answer": [
+    "tracing-appender"
+   ],
    "id": "ln-c11",
    "split": "dev",
    "category": "id_collision",
@@ -440,6 +467,9 @@
    ]
   },
   {
+   "answer": [
+    "println! logging"
+   ],
    "id": "ln-c12",
    "split": "dev",
    "category": "paraphrase",
@@ -451,6 +481,9 @@
    ]
   },
   {
+   "answer": [
+    "Handle::block_on"
+   ],
    "id": "ln-c13",
    "split": "dev",
    "category": "paraphrase",
