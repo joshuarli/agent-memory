@@ -35,6 +35,13 @@ assert ARCHIVE_SPEC.loader is not None
 sys.modules[ARCHIVE_SPEC.name] = ARCHIVE
 ARCHIVE_SPEC.loader.exec_module(ARCHIVE)
 
+BACKUP_SPEC = importlib.util.spec_from_file_location("agent_memory_backup", SRC_DIR / "agent_memory" / "backup.py")
+assert BACKUP_SPEC is not None
+BACKUP = importlib.util.module_from_spec(BACKUP_SPEC)
+sys.modules["agent_memory_backup"] = BACKUP
+assert BACKUP_SPEC.loader is not None
+BACKUP_SPEC.loader.exec_module(BACKUP)
+
 from agent_memory import experience as EXPERIENCE  # noqa: E402
 
 LINE = ('{"timestamp":"2026-10-30T00:00:00Z","type":"response_item","payload":'
@@ -265,8 +272,16 @@ class ArchiveTests(unittest.TestCase):
             self.assertEqual(stats["archive_objects"], 0)
             self.assertEqual(store.db.execute("SELECT count(*) FROM archive_generation").fetchone()[0], 3)
 
+    def object_file_paths(self, store):
+        return sorted(path for path in (store.archive_dir / "objects").rglob("*")
+                      if path.is_file() and not path.name.startswith("."))
+
     def object_files(self, store):
-        return sorted(path.name for path in (store.archive_dir / "objects").rglob("*") if path.is_file() and not path.name.startswith("."))
+        return sorted(path.name.removesuffix(".zlib") for path in self.object_file_paths(store))
+
+    def stored_object_path(self, store, digest):
+        compressed = ARCHIVE.object_path(store.archive_dir, digest).with_name(digest + ".zlib")
+        return compressed if compressed.is_file() else ARCHIVE.object_path(store.archive_dir, digest)
 
     def cmd_session(self, branch="e0"):
         directory = self.root / "cmd" / "slug"
@@ -436,7 +451,7 @@ class ArchiveTests(unittest.TestCase):
             digests = [row[0] for row in store.db.execute("SELECT digest FROM archive_object")]
             self.assertEqual(len(digests), len(set(digests)))
             for digest in digests:
-                self.assertTrue(ARCHIVE.object_path(store.archive_dir, digest).is_file())
+                self.assertTrue(self.stored_object_path(store, digest).is_file())
 
     def test_capture_never_links_the_source_and_works_on_another_filesystem(self):
         self.write("alpha")
@@ -445,7 +460,7 @@ class ArchiveTests(unittest.TestCase):
             self.refresh(store)
             source_info = self.path.stat()
             digest = store.db.execute("SELECT digest FROM archive_object").fetchone()[0]
-            object_info = ARCHIVE.object_path(store.archive_dir, digest).stat()
+            object_info = self.stored_object_path(store, digest).stat()
             self.assertNotEqual((source_info.st_dev, source_info.st_ino), (object_info.st_dev, object_info.st_ino))
             self.assertEqual(source_info.st_ino, self.path.stat().st_ino)
 
@@ -469,7 +484,7 @@ class ArchiveTests(unittest.TestCase):
             digest = store.db.execute("SELECT digest FROM archive_object").fetchone()[0]
             store.forget_session(session, 1000.0)
             self.assertEqual(self.generations(store), 0)
-            self.assertFalse(ARCHIVE.object_path(store.archive_dir, digest).exists())
+            self.assertFalse(self.stored_object_path(store, digest).exists())
             self.assertEqual(store.db.execute("SELECT count(*) FROM tombstone").fetchone()[0], 1)
             self.refresh(store)
             self.assertEqual(store.db.execute("SELECT count(*) FROM sessions").fetchone()[0], 0)
@@ -647,6 +662,105 @@ class ArchiveTests(unittest.TestCase):
         self.assertEqual(report["current_generation_bytes"], pinned)
         self.assertEqual(report["older_generation_only_bytes"], 0)
         self.assertEqual(report["unreferenced_bytes"], 0)
+
+    def test_a_compressible_capture_stores_only_compressed_objects(self):
+        self.write("compressible evidence " * 500)
+        with Store(self.state) as store:
+            self.refresh(store)
+            stored = self.object_file_paths(store)
+            self.assertTrue(stored)
+            self.assertTrue(all(path.name.endswith(".zlib") for path in stored))
+            digests = [row[0] for row in store.db.execute("SELECT digest FROM archive_object ORDER BY digest")]
+            self.assertTrue(digests)
+            for digest in digests:
+                self.assertTrue(ARCHIVE.object_path(store.archive_dir, digest).with_name(digest + ".zlib").is_file())
+                self.assertFalse(ARCHIVE.object_path(store.archive_dir, digest).exists())
+            generation = store.db.execute("SELECT max(id) FROM archive_generation").fetchone()[0]
+            self.assertEqual(ARCHIVE.read_generation(store.db, store.archive_dir, generation), self.path.read_bytes())
+
+    def test_an_incompressible_chunk_is_stored_plain(self):
+        data = os.urandom(ARCHIVE.CHUNK_BYTES)
+        with Store(self.state) as store:
+            ARCHIVE.capture_bytes(store.db, store.archive_dir, "codex", "random", str(self.path), data)
+            digest = ARCHIVE.sha256(data)
+            self.assertEqual([path.name for path in self.object_file_paths(store)], [digest])
+            self.assertFalse(ARCHIVE.object_path(store.archive_dir, digest).with_name(digest + ".zlib").exists())
+            self.assertEqual(ARCHIVE.read_object(store.archive_dir, digest), data)
+
+    def test_a_mixed_plain_and_compressed_archive_round_trips_and_verifies(self):
+        plain = os.urandom(ARCHIVE.CHUNK_BYTES)
+        compressed = ("compressible mixed evidence " * 400).encode()
+        with Store(self.state) as store:
+            first, _ = ARCHIVE.capture_bytes(store.db, store.archive_dir, "codex", "mixed", str(self.path), plain)
+            second, _ = ARCHIVE.capture_bytes(store.db, store.archive_dir, "codex", "mixed", str(self.path), compressed)
+            plain_digest = ARCHIVE.sha256(plain)
+            compressed_digest = ARCHIVE.sha256(compressed)
+            self.assertTrue(ARCHIVE.object_path(store.archive_dir, plain_digest).is_file())
+            self.assertTrue(ARCHIVE.object_path(store.archive_dir, compressed_digest).with_name(
+                compressed_digest + ".zlib").is_file())
+            self.assertEqual(ARCHIVE.read_object(store.archive_dir, plain_digest), plain)
+            self.assertEqual(ARCHIVE.read_object(store.archive_dir, compressed_digest), compressed)
+            self.assertEqual(ARCHIVE.read_generation(store.db, store.archive_dir, first), plain)
+            self.assertEqual(ARCHIVE.read_generation(store.db, store.archive_dir, second), compressed)
+        result = subprocess.run(
+            testkit.command("agent-sessions") + ["archive", "verify", "--state-dir", str(self.state)],
+            capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+    def test_a_corrupt_compressed_object_raises_archive_error(self):
+        data = ("compressible corrupt evidence " * 200).encode()
+        with Store(self.state) as store:
+            ARCHIVE.capture_bytes(store.db, store.archive_dir, "codex", "corrupt", str(self.path), data)
+            digest = ARCHIVE.sha256(data)
+            compressed = ARCHIVE.object_path(store.archive_dir, digest).with_name(digest + ".zlib")
+            self.assertTrue(compressed.is_file())
+            compressed.write_bytes(b"not a zlib stream")
+            with self.assertRaises(ARCHIVE.ArchiveError):
+                ARCHIVE.read_object(store.archive_dir, digest)
+
+    def test_capture_never_writes_a_second_form_for_one_digest(self):
+        data = ("dedup evidence " * 300).encode()
+        with Store(self.state) as store:
+            ARCHIVE.capture_bytes(store.db, store.archive_dir, "codex", "dedup-one", str(self.path), data)
+            ARCHIVE.capture_bytes(store.db, store.archive_dir, "codex", "dedup-two", str(self.path), data)
+            digest = ARCHIVE.sha256(data)
+            matching = [path for path in self.object_file_paths(store) if path.name.removesuffix(".zlib") == digest]
+            self.assertEqual(len(matching), 1)
+            self.assertTrue(matching[0].name.endswith(".zlib"))
+
+    def test_forgetting_a_session_removes_its_compressed_objects(self):
+        self.write("compressible forget evidence " * 200)
+        with Store(self.state) as store:
+            self.refresh(store)
+            self.assertTrue(self.object_file_paths(store))
+            self.assertTrue(all(path.name.endswith(".zlib") for path in self.object_file_paths(store)))
+            session = store.db.execute("SELECT id FROM sessions").fetchone()[0]
+            store.forget_session(session, 1000.0)
+            self.assertEqual(self.object_file_paths(store), [])
+
+    def test_a_backup_of_compressed_objects_verifies_and_restores(self):
+        self.write("compressible backup evidence " * 200)
+        backup_dir = self.root / "backup"
+        restored = self.root / "restored"
+        with Store(self.state) as store:
+            self.refresh(store)
+            self.assertTrue(self.object_file_paths(store))
+            self.assertTrue(all(path.name.endswith(".zlib") for path in self.object_file_paths(store)))
+            BACKUP.create(store, backup_dir)
+            manifest = BACKUP.verify(backup_dir)
+            self.assertTrue(manifest["objects"])
+        backup_files = [path for path in (backup_dir / "objects").rglob("*")
+                        if path.is_file() and not path.name.startswith(".")]
+        self.assertTrue(backup_files)
+        self.assertTrue(all(path.name.endswith(".zlib") for path in backup_files))
+        BACKUP.restore(backup_dir, restored)
+        with Store(restored) as second:
+            generation = second.db.execute("SELECT max(id) FROM archive_generation").fetchone()[0]
+            self.assertEqual(ARCHIVE.read_generation(second.db, second.archive_dir, generation), self.path.read_bytes())
+            restored_files = [path for path in (second.archive_dir / "objects").rglob("*")
+                              if path.is_file() and not path.name.startswith(".")]
+            self.assertTrue(restored_files)
+            self.assertTrue(all(path.name.endswith(".zlib") for path in restored_files))
 
 
 if __name__ == "__main__":

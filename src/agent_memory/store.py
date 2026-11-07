@@ -1897,6 +1897,7 @@ class Store:
             for digest in digests:
                 if self.db.execute("SELECT 1 FROM archive_object WHERE digest = ?", (digest,)).fetchone() is None:
                     archive_module.object_path(self.archive_dir, digest).unlink(missing_ok=True)
+                    archive_module.compressed_object_path(self.archive_dir, digest).unlink(missing_ok=True)
 
     def _discard_received(self, digests):
         with self.db:

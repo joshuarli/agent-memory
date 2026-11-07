@@ -200,13 +200,15 @@ def verify(destination):
         raise BackupError("backup manifest is missing")
     manifest = json.loads(manifest_path.read_text())
     for item in manifest.get("objects") or []:
-        path = archive_module.object_path(destination, item["digest"])
-        if not path.is_file():
-            raise BackupError("backup object is missing: " + item["digest"])
-        if path.stat().st_size != int(item["size"]):
-            raise BackupError("backup object has the wrong size: " + item["digest"])
-        if archive_module.sha256(path.read_bytes()) != item["digest"]:
-            raise BackupError("backup object failed verification: " + item["digest"])
+        digest = item["digest"]
+        if archive_module.existing_object_path(destination, digest) is None:
+            raise BackupError("backup object is missing: " + digest)
+        try:
+            data = archive_module.read_object(destination, digest)
+        except (OSError, archive_module.ArchiveError) as exc:
+            raise BackupError("backup object failed verification: %s (%s)" % (digest, exc)) from exc
+        if len(data) != int(item["size"]):
+            raise BackupError("backup object has the wrong size: " + digest)
     database = destination / "sessions.sqlite3"
     if not database.is_file():
         raise BackupError("backup database is missing")
@@ -230,9 +232,15 @@ def restore(backup_dir, new_state_dir, tombstones_from=None):
     archive_dir = state / "archive"
     archive_dir.mkdir(mode=0o700, exist_ok=True)
     for item in manifest.get("objects") or []:
-        target = archive_module.object_path(archive_dir, item["digest"])
+        digest = item["digest"]
+        source = archive_module.existing_object_path(backup_dir, digest)
+        if source is None:
+            raise BackupError("backup object is missing: " + digest)
+        target = archive_module.object_path(archive_dir, digest)
+        if source.name.endswith(archive_module.ZLIB_SUFFIX):
+            target = target.with_name(target.name + archive_module.ZLIB_SUFFIX)
         target.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
-        shutil.copyfile(archive_module.object_path(backup_dir, item["digest"]), target)
+        shutil.copyfile(source, target)
     database = state / "sessions.sqlite3"
     with contextlib.closing(
             sqlite3.connect("file:%s?mode=ro" % (backup_dir / "sessions.sqlite3").as_posix(), uri=True)) as source:

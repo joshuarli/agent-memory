@@ -18,6 +18,7 @@ import secrets
 import sqlite3
 import stat
 import time
+import zlib
 from pathlib import Path
 from typing import Any
 
@@ -29,6 +30,10 @@ MAX_ARTIFACT_BYTES = 8 * 1024 * 1024
 MAX_ARTIFACTS = 200
 MAX_OBJECT_BYTES = 64 * 1024 * 1024
 MAX_METADATA_BYTES = 64 * 1024
+ZLIB_SUFFIX = ".zlib"
+ZLIB_LEVEL = 6
+ZLIB_SAVINGS_DENOMINATOR = 20
+ZLIB_SAVINGS_NUMERATOR = 19
 DIGEST = re.compile(r"[0-9a-f]{64}")
 SESSION_METADATA_FIELDS = ("cwd", "parent", "source", "thread_source", "ancestry", "branch_tip", "workspaces", "step_count")
 
@@ -81,6 +86,32 @@ def object_path(archive_dir, digest):
     return Path(archive_dir) / "objects" / digest[:2] / digest
 
 
+def compressed_object_path(archive_dir, digest):
+    return object_path(archive_dir, digest).with_name(digest + ZLIB_SUFFIX)
+
+
+def existing_object_path(archive_dir, digest):
+    for path in (object_path(archive_dir, digest), compressed_object_path(archive_dir, digest)):
+        if path.is_file() and not path.is_symlink():
+            return path
+    return None
+
+
+def _read_stored(path):
+    flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
+    descriptor = os.open(path, flags)
+    with os.fdopen(descriptor, "rb") as stream:
+        raw = stream.read()
+    return zlib.decompress(raw) if path.name.endswith(ZLIB_SUFFIX) else raw
+
+
+def _encode_object(data):
+    packed = zlib.compress(data, ZLIB_LEVEL)
+    if len(packed) * ZLIB_SAVINGS_DENOMINATOR <= len(data) * ZLIB_SAVINGS_NUMERATOR:
+        return packed, True
+    return data, False
+
+
 @contextlib.contextmanager
 def object_lock(archive_dir, exclusive=False):
     """Serialize object removal against everything that reads or publishes objects.
@@ -99,16 +130,24 @@ def object_lock(archive_dir, exclusive=False):
 
 def _write_object(archive_dir, data):
     digest = sha256(data)
-    target = object_path(archive_dir, digest)
-    if target.is_file() and not target.is_symlink() and target.stat().st_size == len(data):
-        if sha256(target.read_bytes()) == digest:
-            return digest, len(data), False
+    plain = object_path(archive_dir, digest)
+    compressed = compressed_object_path(archive_dir, digest)
+    for path in (plain, compressed):
+        if path.is_file() and not path.is_symlink():
+            try:
+                stored = _read_stored(path)
+            except (OSError, zlib.error):
+                continue
+            if sha256(stored) == digest:
+                return digest, len(data), False
+    payload, encode = _encode_object(data)
+    target, other = (compressed, plain) if encode else (plain, compressed)
     target.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
     staging = target.with_name(".tmp." + secrets.token_hex(8))
     try:
         descriptor = os.open(staging, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
         try:
-            view = memoryview(data)
+            view = memoryview(payload)
             while view:
                 written = os.write(descriptor, view)
                 view = view[written:]
@@ -116,6 +155,8 @@ def _write_object(archive_dir, data):
         finally:
             os.close(descriptor)
         os.replace(staging, target)
+        if other.is_file() or other.is_symlink():
+            other.unlink(missing_ok=True)
         _fsync_directory(target.parent)
     except BaseException:
         try:
@@ -127,11 +168,20 @@ def _write_object(archive_dir, data):
 
 
 def read_object(archive_dir, digest):
-    path = object_path(archive_dir, digest)
+    path = existing_object_path(archive_dir, digest)
+    if path is None:
+        raise FileNotFoundError("archived object is missing: " + digest)
     flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
     descriptor = os.open(path, flags)
     with os.fdopen(descriptor, "rb") as stream:
-        data = stream.read()
+        raw = stream.read()
+    if path.name.endswith(ZLIB_SUFFIX):
+        try:
+            data = zlib.decompress(raw)
+        except zlib.error as exc:
+            raise ArchiveError("archived object is corrupt: " + digest) from exc
+    else:
+        data = raw
     if sha256(data) != digest:
         raise ArchiveError("archived object is corrupt: " + digest)
     return data

@@ -9,6 +9,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+import zlib
 from pathlib import Path
 from typing import Any
 from unittest import mock
@@ -716,7 +717,8 @@ def opencode_database(root, project, sessions):
 
 
 def archived_bytes(store):
-    return b"".join(path.read_bytes() for path in sorted(store.archive_dir.rglob("*")) if path.is_file())
+    return b"".join(zlib.decompress(path.read_bytes()) if path.suffix == ".zlib" else path.read_bytes()
+                    for path in sorted(store.archive_dir.rglob("*")) if path.is_file())
 
 
 def oc_user(text):

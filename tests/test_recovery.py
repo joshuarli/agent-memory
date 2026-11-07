@@ -253,7 +253,8 @@ class RecoveryTests(unittest.TestCase):
             self.assertEqual(len(third.search("keep me", None)), 1)
             self.assertEqual(third.db.execute("SELECT count(*) FROM archive_generation WHERE native_id = 's-1'").fetchone()[0], 0)
             referenced = {row[0] for row in third.db.execute("SELECT digest FROM archive_object")}
-            on_disk = {path.name for path in (restored / "archive" / "objects").rglob("*") if path.is_file()}
+            on_disk = {path.name.removesuffix(".zlib") for path in (restored / "archive" / "objects").rglob("*")
+                       if path.is_file()}
             self.assertEqual(on_disk, referenced)
 
 
@@ -285,6 +286,8 @@ class RecoveryTests(unittest.TestCase):
         store = self.backup_source()
         digest = store.db.execute("SELECT digest FROM archive_object LIMIT 1").fetchone()[0]
         path = ARCHIVE.object_path(store.archive_dir, digest)
+        if not path.exists():
+            path = path.with_name(path.name + ".zlib")
         data = bytearray(path.read_bytes())
         data[0] ^= 0xFF
         path.write_bytes(bytes(data))
@@ -325,7 +328,8 @@ class RecoveryTests(unittest.TestCase):
         with sqlite3.connect(destination / "sessions.sqlite3") as snapshot:
             self.assertGreaterEqual(snapshot.execute("SELECT count(*) FROM archive_generation WHERE native_id = 's-1'").fetchone()[0], 1)
         store.db.rollback()
-        live = {path.name for path in (self.root / "state" / "archive" / "objects").rglob("*") if path.is_file()}
+        live = {path.name.removesuffix(".zlib") for path in (self.root / "state" / "archive" / "objects").rglob("*")
+                if path.is_file()}
         self.assertEqual(live, {row[0] for row in store.db.execute("SELECT digest FROM archive_object")})
 
     def test_an_empty_destination_directory_is_accepted_and_a_populated_one_is_refused(self):

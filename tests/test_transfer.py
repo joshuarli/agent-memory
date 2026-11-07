@@ -246,6 +246,8 @@ class TransferTests(unittest.TestCase):
         central = Store(self.central_state)
         digest = central.db.execute("SELECT digest FROM archive_generation_object LIMIT 1").fetchone()[0]
         object_path = ARCHIVE.object_path(central.archive_dir, digest)
+        if not object_path.exists():
+            object_path = object_path.with_name(object_path.name + ".zlib")
         data = bytearray(object_path.read_bytes())
         data[0:1] = b"X"
         object_path.write_bytes(bytes(data))
