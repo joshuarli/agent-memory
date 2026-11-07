@@ -36,7 +36,7 @@ from agent_memory import learning_sync  # noqa: E402
 from agent_memory import mirror  # noqa: E402
 from agent_memory import mirror_crypto  # noqa: E402
 from agent_memory import types as types_module  # noqa: E402
-from agent_memory.store import Store  # noqa: E402
+from agent_memory.store import SCHEMA_VERSION, Store  # noqa: E402
 
 FIXTURE = json.loads((ROOT / "tests" / "fixtures" / "mirror_protocol.json").read_text())
 LEARNING_FIXTURE = json.loads(
@@ -885,7 +885,7 @@ class StoreMirrorTests(unittest.TestCase):
         self.temporary.cleanup()
 
     def test_schema_v11_pins_a_remote_and_tracks_acks(self):
-        self.assertEqual(self.store.db.execute("PRAGMA user_version").fetchone()[0], 11)
+        self.assertEqual(self.store.db.execute("PRAGMA user_version").fetchone()[0], SCHEMA_VERSION)
         self.assertEqual(self.store.mirror_remote_state("cloudflare"), None)
         self.store.write_mirror_remote("cloudflare", "usr-memories", 4, 2)
         state = self.store.mirror_remote_state("cloudflare")
@@ -1013,7 +1013,7 @@ class StoreMirrorTests(unittest.TestCase):
             connection.execute("DROP TABLE mirror_remote")
             connection.execute("PRAGMA user_version = 9")
         self.store = Store(self.root)
-        self.assertEqual(self.store.db.execute("PRAGMA user_version").fetchone()[0], 11)
+        self.assertEqual(self.store.db.execute("PRAGMA user_version").fetchone()[0], SCHEMA_VERSION)
         self.assertEqual(self.store.db.execute("SELECT count(*) FROM tombstone").fetchone()[0], 1)
         self.store.write_mirror_remote("cloudflare", "usr-memories", 1, 0)
         state = self.store.mirror_remote_state("cloudflare")
@@ -1028,7 +1028,7 @@ class StoreMirrorTests(unittest.TestCase):
             connection.execute("ALTER TABLE mirror_remote DROP COLUMN snapshot_failed_at")
             connection.execute("PRAGMA user_version = 10")
         self.store = Store(self.root)
-        self.assertEqual(self.store.db.execute("PRAGMA user_version").fetchone()[0], 11)
+        self.assertEqual(self.store.db.execute("PRAGMA user_version").fetchone()[0], SCHEMA_VERSION)
         state = cast(dict[str, Any], self.store.mirror_remote_state("cloudflare"))
         self.assertEqual((state["revision"], state["last_error"], state["snapshot_failures"]),
                          (7, "snapshot commit failed", 0))
