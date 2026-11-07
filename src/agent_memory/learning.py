@@ -1585,7 +1585,7 @@ class Learner:
                 finding["id"], session["id"], phase, int(relevant), int(proposal["owner"] in loaded),
                 int(repeated), "observational; procedure adherence and causality unestablished", int(finding["id"] in regressed)))
 
-    def quality(self):
+    def quality(self, now=None):
         receipts = {row[0]: row[1] for row in self.db.execute("SELECT event,count(*) FROM learning_receipts GROUP BY event")}
         returned = self.db.execute("SELECT tier,status,count(*) FROM learning_receipts WHERE event='returned' GROUP BY tier,status").fetchall()
         repeated_abstentions = [dict(row) for row in self.db.execute(
@@ -1622,8 +1622,23 @@ class Learner:
             "outcomes_by_verification": outcomes,
             "hook_attempts": hook_attempts,
             "hook_outcomes": hook_outcomes,
+            "usage": self.usage(time.time() if now is None else now),
             "not_observable": ["whether the agent obeyed a result", "whether a missed memory existed but was never captured", "causal improvement"],
         }
+
+    def usage(self, now):
+        from agent_memory import sessions_cli, usage
+        known: dict[usage.Tool, frozenset[str]] = {"recall": usage.option_names(parser(), "recall"), "search": usage.option_names(sessions_cli.parser(), "search")}
+        rows = self.db.execute("""SELECT e.session, s.harness, s.project, e.position, e.text, e.call_id FROM events e JOIN sessions s ON s.id=e.session
+            WHERE s.updated>=? AND e.kind='tool-call' AND (e.text LIKE ? OR e.text LIKE ?)""", (now - usage.WINDOW_DAYS * 86400, *usage.LIKE_PATTERNS)).fetchall()
+        calls = []
+        for row in rows:
+            call_id = (row["call_id"] or "").split(",")[0]
+            output = self.db.execute("""SELECT text FROM events WHERE session=? AND kind='tool-output' AND position>?
+                AND (?='' OR instr(','||coalesce(call_id,'')||',', ','||?||',')>0) ORDER BY position LIMIT 1""",
+                                     (row["session"], row["position"], call_id, call_id)).fetchone()
+            calls.append(usage.Call(row["session"], row["harness"], row["project"], row["position"], row["text"], output[0] if output else None))
+        return usage.report(calls, known)
 
     def trace_outcomes(self, now, limit=50):
         written = 0

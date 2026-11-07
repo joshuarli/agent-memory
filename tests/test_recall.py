@@ -419,6 +419,22 @@ class ReceiptTests(RecallCase):
         self.learner.retrieve(self.ident["alpha"], "something unrelated entirely", cwd=self.world.cwd("alpha"), now=self.world.now, record=True)
         self.assertEqual(self.store.db.execute("SELECT count(*) FROM learning_receipts WHERE event = 'abstained'").fetchone()[0], 1)
 
+    def test_quality_reports_tool_usage_from_indexed_transcripts(self):
+        spec = lesson_world()
+        spec["episodes"].append(episode("u-1", "alpha", [
+            {"user": "why does the runner fail"},
+            tool("agent-learn recall 'runner failure' --project /repo --no-refresh", "[]", 0),
+            tool("agent-learn recall 'ModuleNotFoundError orbit_core' --project /repo --weak", '[{"ref":"experience:1"}]', 0),
+            tool("agent-sessions search orbit_core --kind tool-output", "matches=0", 0)], age=2))
+        spec["episodes"].append(episode("u-2", "beta", [{"user": "old work"}, tool("agent-learn recall 'old' --project /repo", "[]", 0)], age=40))
+        self.build(spec)
+        report = self.learner.quality(now=self.world.now)["usage"]
+        recalled, searched = report["recall"], report["search"]
+        self.assertEqual((recalled["invocations"], recalled["by_project"], recalled["outcomes"], recalled["retry_rate_after_empty"]),
+                         (2, {self.ident["alpha"]: 2}, {"answered": 1, "empty": 1, "unknown": 0}, 1.0))
+        self.assertEqual((recalled["options"]["--weak"], recalled["options"]["--no-refresh"], recalled["options"]["--explain"]), (1, 1, 0))
+        self.assertEqual((searched["invocations"], searched["options"]["--kind"], searched["outcomes"]["empty"]), (1, 1, 1))
+
     def test_quality_report_separates_observation_from_causality(self):
         self.build(lesson_world())
         report = self.learner.quality()
