@@ -1238,6 +1238,56 @@ class PromptHookTests(CliCase):
         assert context is not None
         self.assertNotIn("<", context.split("\n", 1)[1])
 
+    @staticmethod
+    def rendered_line(item):
+        summary = " ".join(item["summary"].split())
+        return "- %s %s (%s, %d days old): %s" % (item["tier"], item["ref"], item["status"], item["age_days"], summary)
+
+    @staticmethod
+    def long_result(index):
+        return {"ref": "experience:%d" % index, "tier": "experience", "status": "verified", "age_days": 20,
+                "kind": "tool-output", "summary": " ".join(["word"] * 79)}
+
+    def test_a_single_long_result_renders_whole_within_the_total_budget(self):
+        from agent_memory import recall_hook
+        item = self.long_result(1)
+        self.assertGreater(len(" ".join(item["summary"].split())), 200)
+        shown, context = recall_hook.render("unrelated prompt text", [item])
+        self.assertEqual(shown, [item])
+        assert context is not None
+        line = context.split("\n", 1)[1]
+        self.assertIn(" ".join(item["summary"].split()), line)
+        self.assertNotIn("…", line)
+        self.assertLessEqual(len(line), recall_hook.RESULTS_CHARS)
+
+    def test_three_long_results_fill_the_budget_and_end_on_word_boundaries(self):
+        from agent_memory import recall_hook
+        items = [dict(self.long_result(index), summary=" ".join(["word"] * 60)) for index in (1, 2, 3)]
+        shown, context = recall_hook.render("unrelated prompt text", items)
+        self.assertEqual(shown, items)
+        assert context is not None
+        lines = context.split("\n")[1:]
+        self.assertEqual(len(lines), 3)
+        self.assertLessEqual(sum(len(line) for line in lines), recall_hook.RESULTS_CHARS)
+        for line, item in zip(lines, items):
+            self.assertTrue(line.endswith("…"), line)
+            text = line[:-1]
+            original = self.rendered_line(item)
+            self.assertTrue(original.startswith(text), text)
+            self.assertEqual(original[len(text)], " ")
+
+    def test_a_cut_never_splits_a_token(self):
+        from agent_memory import recall_hook
+        item = dict(self.long_result(1), summary=" ".join(["token"] * 120))
+        _, context = recall_hook.render("unrelated prompt text", [item])
+        assert context is not None
+        line = context.split("\n", 1)[1]
+        self.assertTrue(line.endswith("…"), line)
+        text = line[:-1]
+        original = self.rendered_line(item)
+        self.assertTrue(original.startswith(text), text)
+        self.assertEqual(original[len(text)], " ")
+
     def test_a_timeout_injects_nothing_and_leaves_one_retry(self):
         self.observed_world()
         from agent_memory import recall_hook

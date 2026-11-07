@@ -20,7 +20,6 @@ INJECTED_PROMPT_PREFIXES = ("/", "<", "#!", "Caveat:", "# AGENTS.md instructions
 RESULT_LIMIT = 3
 CANDIDATE_LIMIT = 5
 ECHO_CONTAINMENT = 0.8
-LINE_CHARS = 200
 RESULTS_CHARS = 600
 PROGRESS_STEPS = 1000
 MAX_ATTEMPTS = 2
@@ -44,16 +43,22 @@ def echoes(prompt: str, item: dict[str, Any]) -> bool:
 
 
 def render(prompt: str, results: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], Optional[str]]:
-    shown, lines, used = [], [], 0
+    renderable = []
     for item in results:
         if echoes(prompt, item):
             continue
-        if len(shown) == RESULT_LIMIT:
+        if len(renderable) == RESULT_LIMIT:
             break
+        renderable.append(item)
+    shown, lines, used = [], [], 0
+    for index, item in enumerate(renderable):
         line = "- %s %s (%s, %d days old): %s" % (item["tier"], item["ref"], item["status"], item["age_days"], " ".join(item["summary"].split()))
-        line = line.replace("<", "‹").replace(">", "›")[:LINE_CHARS]
-        if lines and used + len(line) > RESULTS_CHARS:
-            break
+        line = line.replace("<", "‹").replace(">", "›")
+        remaining = RESULTS_CHARS - used
+        limit = min(remaining, max(200, remaining - 200 * (len(renderable) - index - 1)))
+        if len(line) > limit:
+            cut = line.rfind(" ", 0, limit)
+            line = line[:cut if cut >= 0 else limit - 1] + "…"
         shown.append(item)
         lines.append(line)
         used += len(line)
