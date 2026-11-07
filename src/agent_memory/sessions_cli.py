@@ -756,6 +756,9 @@ def _archive(args):
                       % (files, total, redundant_files, redundant_bytes, retained_files, retained_bytes,
                          int(args.apply)))
                 return 0
+            if args.json:
+                print(json.dumps(dict(status_document(store), storage=archive_module.storage_report(store)), sort_keys=True))
+                return 0
             report = archive_module.retention_report(store.db)
             print("generations=%d objects=%d bytes=%d tombstoned=%d" % (
                 report["generations"], report["objects"], report["bytes"], report["tombstoned"]))
@@ -1107,6 +1110,7 @@ def parser():
     archive = commands.add_parser("archive", help="verify, reindex, or report the local archive")
     archive.add_argument("action", choices=("status", "verify", "reindex", "prune-legacy"))
     archive.add_argument("--apply", action="store_true", help="delete redundant legacy copies")
+    archive.add_argument("--json", action="store_true", help="print a machine-readable status document")
     archive.add_argument("--state-dir")
     archive.set_defaults(run=_archive)
 

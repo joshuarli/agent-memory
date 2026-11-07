@@ -35,12 +35,19 @@ assert ARCHIVE_SPEC.loader is not None
 sys.modules[ARCHIVE_SPEC.name] = ARCHIVE
 ARCHIVE_SPEC.loader.exec_module(ARCHIVE)
 
+from agent_memory import experience as EXPERIENCE  # noqa: E402
+
 LINE = ('{"timestamp":"2026-10-30T00:00:00Z","type":"response_item","payload":'
         '{"type":"message","role":"user","content":[{"type":"input_text","text":"%s"}]}}\n')
 
 
 def line(text):
     return LINE % text
+
+
+def sized_line(total, text="x"):
+    stem = LINE % ""
+    return LINE % (text * (total - len(stem)))
 
 
 def header(cwd, session="a"):
@@ -585,6 +592,61 @@ class ArchiveTests(unittest.TestCase):
             offsets = [offset for offset, _raw, _length in lines]
             self.assertEqual(offsets, sorted(offsets))
             self.assertEqual(offsets[0], 0)
+
+    def test_storage_report_separates_current_and_older_generation_bytes(self):
+        first = sized_line(96 * 1024 - len(header(self.project)))
+        self.path.write_text(header(self.project) + first)
+        appends = [sized_line(1024, "y") for _ in range(30)]
+        with Store(self.state) as store:
+            self.refresh(store)
+            for append in appends:
+                with self.path.open("a") as stream:
+                    stream.write(append)
+                self.refresh(store)
+            report = ARCHIVE.storage_report(store)
+        chunk = ARCHIVE.CHUNK_BYTES
+        sizes = [96 * 1024 + index * 1024 for index in range(31)]
+        trailing = [size - chunk for size in sizes]
+        unique = chunk + sum(trailing)
+        current = chunk + trailing[-1]
+        self.assertEqual(len(self.object_files(store)), 32)
+        self.assertEqual(report["generations"], 31)
+        self.assertEqual(report["sessions"], 1)
+        self.assertEqual(report["archive_unique_bytes"], unique)
+        self.assertEqual(report["current_generation_bytes"], current)
+        self.assertEqual(report["older_generation_only_bytes"], unique - current)
+        self.assertEqual(report["unreferenced_bytes"], 0)
+        self.assertEqual(report["pinned_bytes"], 0)
+
+    def test_storage_report_pins_the_generation_that_evidence_resolution_reads(self):
+        size = 96 * 1024
+        self.path.write_text(header(self.project) + sized_line(size - len(header(self.project)), "x"))
+        with Store(self.state) as store:
+            self.refresh(store)
+            source = store.db.execute(
+                "SELECT session, position, digest FROM events WHERE kind = 'user' ORDER BY position LIMIT 1").fetchone()
+            store.db.executescript(EXPERIENCE.SCHEMA)
+            with store.db:
+                experience = store.db.execute(
+                    "INSERT INTO learning_experiences (project, kind, claim, applies_when, identifiers, fingerprint, basis, "
+                    "detector, observed_at, captured_at) VALUES (?, 'gotcha', 'claim', 'condition', '[]', 'fp', "
+                    "'deterministic', 'det', 10, 10)", (self.project_id,)).lastrowid
+                store.db.execute(
+                    "INSERT INTO learning_experience_sources (experience, session, position, digest, role) "
+                    "VALUES (?, ?, ?, ?, 'trigger')",
+                    (experience, source["session"], source["position"], source["digest"]))
+            self.path.unlink()
+            resolved = store.resolve_evidence(source["session"], source["position"], source["digest"])
+            generation = store.db.execute("SELECT archive_generation FROM sessions").fetchone()[0]
+            pinned = sum({digest: chunk_size for _offset, chunk_size, digest in
+                          ARCHIVE.generation_chunks(store.db, generation)}.values())
+            report = ARCHIVE.storage_report(store)
+        self.assertEqual(resolved["session"], source["session"])
+        self.assertEqual(pinned, size)
+        self.assertEqual(report["pinned_bytes"], pinned)
+        self.assertEqual(report["current_generation_bytes"], pinned)
+        self.assertEqual(report["older_generation_only_bytes"], 0)
+        self.assertEqual(report["unreferenced_bytes"], 0)
 
 
 if __name__ == "__main__":

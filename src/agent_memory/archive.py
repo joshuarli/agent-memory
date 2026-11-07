@@ -15,6 +15,7 @@ import json
 import os
 import re
 import secrets
+import sqlite3
 import stat
 import time
 from pathlib import Path
@@ -672,6 +673,92 @@ def retention_report(db):
         "objects": db.execute("SELECT count(*) FROM archive_object").fetchone()[0],
         "bytes": db.execute("SELECT coalesce(sum(size), 0) FROM archive_object").fetchone()[0],
         "tombstoned": db.execute("SELECT count(*) FROM archive_generation WHERE tombstoned = 1").fetchone()[0],
+    }
+
+
+def _generation_digests(db, generation):
+    digests = {row[0] for row in db.execute(
+        "SELECT digest FROM archive_generation_object WHERE generation = ?", (int(generation),))}
+    digests.update(row[0] for row in db.execute(
+        "SELECT digest FROM archive_artifact WHERE generation = ?", (int(generation),)))
+    return digests
+
+
+def _evidence_generation(db, session):
+    if session["archive_generation"] is not None:
+        return int(session["archive_generation"])
+    statement = "SELECT id FROM archive_generation WHERE harness = ? AND native_id = ?"
+    parameters = [session["harness"], session["native_id"]]
+    if session["origin_host"] is not None:
+        statement += " AND origin_host = ?"
+        parameters.append(session["origin_host"])
+    row = db.execute(statement + " ORDER BY captured_at DESC, id DESC LIMIT 1", parameters).fetchone()
+    return int(row[0]) if row is not None else None
+
+
+def _tables_available(db, *names):
+    present = {row[0] for row in db.execute(
+        "SELECT name FROM sqlite_master WHERE type = 'table' AND name IN (%s)" % ", ".join("?" * len(names)), names)}
+    return len(present) == len(names)
+
+
+def storage_report(store):
+    db = store.db
+    database_bytes = Path(store.path).stat().st_size
+    wal = Path(str(store.path) + "-wal")
+    wal_bytes = wal.stat().st_size if wal.is_file() else 0
+    try:
+        tables = {str(row[0]): int(row[1]) for row in db.execute("SELECT name, sum(pgsize) FROM dbstat GROUP BY name")}
+        tables_unavailable = None
+    except sqlite3.OperationalError:
+        tables = None
+        tables_unavailable = "dbstat"
+    freelist_bytes = int(db.execute("PRAGMA page_size").fetchone()[0]) * int(
+        db.execute("PRAGMA freelist_count").fetchone()[0])
+
+    sizes = {row["digest"]: int(row["size"]) for row in db.execute("SELECT digest, size FROM archive_object")}
+    generation_ids = [int(row[0]) for row in db.execute("SELECT id FROM archive_generation")]
+    latest = {}
+    for row in db.execute("SELECT id, origin_host, harness, native_id FROM archive_generation ORDER BY captured_at, id"):
+        latest[(row["origin_host"], row["harness"], row["native_id"])] = int(row["id"])
+    current_ids = set(latest.values())
+    reachable = set()
+    current = set()
+    for generation in generation_ids:
+        digests = _generation_digests(db, generation)
+        reachable |= digests
+        if generation in current_ids:
+            current |= digests
+
+    pinned = set()
+    if _tables_available(db, "learning_experiences", "learning_experience_sources"):
+        sources = db.execute(
+            "SELECT DISTINCT s.session FROM learning_experience_sources s "
+            "JOIN learning_experiences e ON e.id = s.experience WHERE e.state = 'retained'").fetchall()
+        for source in sources:
+            session = db.execute(
+                "SELECT harness, native_id, archive_generation, origin_host FROM sessions WHERE id = ?",
+                (source["session"],)).fetchone()
+            generation = _evidence_generation(db, session) if session is not None else None
+            if generation is not None:
+                pinned |= _generation_digests(db, generation)
+
+    def total(digests):
+        return sum(sizes.get(digest, 0) for digest in digests)
+
+    return {
+        "database_bytes": int(database_bytes),
+        "wal_bytes": int(wal_bytes),
+        "tables": tables,
+        "tables_unavailable": tables_unavailable,
+        "freelist_bytes": freelist_bytes,
+        "archive_unique_bytes": sum(sizes.values()),
+        "current_generation_bytes": total(current),
+        "older_generation_only_bytes": total(reachable - current),
+        "pinned_bytes": total(pinned),
+        "unreferenced_bytes": total(set(sizes) - reachable),
+        "sessions": int(db.execute("SELECT count(*) FROM sessions").fetchone()[0]),
+        "generations": len(generation_ids),
     }
 
 
