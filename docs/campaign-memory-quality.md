@@ -5,7 +5,8 @@
 - **Goal:** keep the evidence model; make ordinary recall selective and measurably useful; bound local storage growth; measure all of it before anything is deleted.
 - **Base:** `c8845ee` on `master`. No slice accepted yet.
 - **Next slice:** MQ-1.
-- **Blocked on the owner:** the paid Codex run in MQ-5 and the location of the real-query corpus in MQ-6.
+- **In flight:** MQ-1, MQ-2, and the Pi surfacing check.
+- **Blocked on the owner:** approval for the paid Codex run in MQ-5.
 
 ## Charter
 
@@ -25,6 +26,7 @@
 | Results are reported for that model only. | prescribed | One model and one task family support no general claim. |
 | Retrieval eligibility, storage retention, and semantic forgetting stay separate operations. `forget-session` is never used for compaction. | prescribed | A retained memory can need old evidence, and stale advice can be useful as history. |
 | Presentation (hook or recall hit) never extends retention or raises authority. Only reconfirmation by new evidence reactivates an automatically retired record. | prescribed | Retrieval frequency is biased by the current paraphrase misses. |
+| Real queries stay outside the repo. | delegated | The repo is public and the queries come from private sessions. |
 | This campaign deletes nothing. Retention runs as a planner that reports what it would retire, compress, or prune. | prescribed | Enforcement needs the simulation evidence from MQ-9 first. |
 
 ## Baseline
@@ -44,7 +46,7 @@
 | MQ-3 | Recall quality gate: `bench_recall.py gate` compares per-category default and retry hit counts, abstention, forbidden project leakage, stale-as-current results, and serialized result bytes against a committed baseline. It exits nonzero on regression. | `eval/bench_recall.py`, `eval/recall-baseline.json`, `eval/test_bench_recall.py` (picked up by `make test-python`) | none | The gate passes at HEAD and fails on a fixture with one regression in each measure. |
 | MQ-4 | Span labels: fixtures name the fact or evidence span that answers each query. The judge requires the span to appear in the returned text, not only the right session. | `eval/recall-fixtures/`, `eval/bench_recall.py` | MQ-3 | The gate reports both measures. The baseline is re-recorded and any drop is stated in the commit body. |
 | MQ-5 | Oracle arm for `eval/live_recall.py`: injects the correct memory, to separate retrieval failure from failure to use evidence. | `eval/live_recall.py`, `eval/test_live_recall.py` | none | `eval/test_live_recall.py`: the oracle prompt carries the lesson, and the arm appears in `summarize` and `verdict`. |
-| MQ-6 | Real-query corpus: 50 to 100 reviewed queries from real sessions, each frozen to its corpus cutoff and repository revision, covering exact identifiers, paraphrases, decisions, multi-session problems, obsolete workarounds, and no-answer cases. | harness in `eval/`; data location per owner | MQ-4 | `bench_recall.py gate --corpus <path>` reports per-category results on the owner's machine. |
+| MQ-6 | Real-query corpus: 50 to 100 reviewed queries from real sessions, each frozen to its corpus cutoff and repository revision, covering exact identifiers, paraphrases, decisions, multi-session problems, obsolete workarounds, and no-answer cases. | harness in `eval/`; queries under `~/.local/state/agent-memory/eval/real-queries/`, never committed | MQ-4 | `bench_recall.py gate --corpus <path>` reports per-category results on the owner's machine. |
 | MQ-7 | Storage breakdown in `agent-sessions archive status --json` and `doctor --json`: database and WAL bytes, bytes per table and index (through `dbstat` when the SQLite build has it, otherwise reported as unavailable), unique archive bytes, current versus older generations, bytes pinned by retained experiences, and unreferenced bytes. | `src/agent_memory/archive.py`, `src/agent_memory/store.py` (read-only queries), `tests/test_archive.py` | none | `tests/test_archive.py`: the synthetic 30-append workload reports the older-generation and pinned bytes that a hand count gives. |
 | MQ-8 | Compressed local archive objects: an explicit per-object encoding, digests over the original bytes, and per-chunk compression that keeps bounded reads. Old uncompressed objects stay readable. Mirror upload sends the same plaintext as before. | `src/agent_memory/archive.py`, `tests/test_archive.py`, `tests/test_mirror.py` | MQ-7 | Mixed-encoding round trip; `tests/test_mirror.py` and `tests/test_transfer.py` pass unchanged; compression ratio, inspect latency, and peak memory are measured on real transcripts and stated in the commit body. |
 | MQ-9 | Retention planner, simulation only: `agent-sessions archive plan --json` lists generations and objects it would prune (keep the latest generation per session, generations retained evidence needs, and a bounded sample of the rest), plus experiences it would retire. A simulated-clock suite runs a year of lifecycle events. | new planner module, `tests/test_retention.py` | MQ-2, MQ-7 | The simulated-clock suite covers each scenario below and checks that the inspected evidence of every retained memory survives the plan. |
