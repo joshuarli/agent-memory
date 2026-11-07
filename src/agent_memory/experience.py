@@ -577,15 +577,26 @@ def _relate(db, experience, project, draft, identifiers, now):
                        ("superseded by experience %d" % experience, now, row["id"]))
 
 
-def retire_stale(db, now, days=RETIRE_AFTER_DAYS):
+def retire_candidates(db, now, days=RETIRE_AFTER_DAYS):
     cutoff = now - days * 86400
+    return [int(row[0]) for row in db.execute(
+        "SELECT id FROM learning_experiences "
+        "WHERE state = 'retained' AND validity = '[]' AND observed_at < ? AND captured_at < ? "
+        "AND (SELECT count(DISTINCT session) FROM learning_experience_sources WHERE experience = learning_experiences.id) <= 1 "
+        "AND NOT EXISTS (SELECT 1 FROM learning_receipts r WHERE r.record = 'experience:' || learning_experiences.id AND r.source = 'agent') "
+        "ORDER BY id",
+        (cutoff, cutoff))]
+
+
+def retire_stale(db, now, days=RETIRE_AFTER_DAYS):
+    ids = retire_candidates(db, now, days)
+    if not ids:
+        return 0
     with db:
         return db.execute(
             "UPDATE learning_experiences SET state = 'retired', state_reason = 'unused single-session historical candidate', state_at = ? "
-            "WHERE state = 'retained' AND validity = '[]' AND observed_at < ? AND captured_at < ? "
-            "AND (SELECT count(DISTINCT session) FROM learning_experience_sources WHERE experience = learning_experiences.id) <= 1 "
-            "AND NOT EXISTS (SELECT 1 FROM learning_receipts r WHERE r.record = 'experience:' || learning_experiences.id AND r.source = 'agent')",
-            (now, cutoff, cutoff)).rowcount
+            "WHERE id IN (%s)" % ", ".join("?" * len(ids)),
+            (now, *ids)).rowcount
 
 
 def session_events(db, session):

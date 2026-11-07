@@ -191,6 +191,8 @@ Every refresh captures each transcript into `~/.agent-sessions/archive`, a `0700
 - The archive holds complete, unredacted transcripts. Keep it out of Git and include it in backup and disk-encryption decisions. `agent-learn forget-session` is the only way to remove an archived session.
 - What survives: harness cleanup or deletion; a process crash at any publication point (tested); an equal-size rewrite with a restored modification time (a new generation is captured because the inode change time also moves). What is not claimed: power loss beyond what the filesystem and the object fsync establish, an interior rewrite of a growing log that keeps the final captured chunk identical, or recovery of a live process or an external tool side effect. Archiving a transcript is not resuming a process.
 
+`agent-sessions archive plan` is report-only: it lists the experiences a retention policy would retire and the archive generations it would prune, with the bytes only those generations hold. It changes nothing and rejects `--apply`; `--json` prints the full plan.
+
 ## Command Code and Antigravity CLI
 
 Both are indexed like every other harness: discovery, metadata, events, archive, search, `show`, `doctor`, and experience capture. Command Code IDs are `cmd:ID`; Antigravity IDs are `agy:CONVERSATION`. The aliases `command`, `command-code`, `commandcode`, and `antigravity` are accepted anywhere a harness name is, and are normalized once.

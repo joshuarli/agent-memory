@@ -865,6 +865,30 @@ def _tables_available(db, *names):
     return len(present) == len(names)
 
 
+def latest_generations(db):
+    latest = {}
+    for row in db.execute("SELECT id, origin_host, harness, native_id FROM archive_generation ORDER BY captured_at, id"):
+        latest[(row["origin_host"], row["harness"], row["native_id"])] = int(row["id"])
+    return set(latest.values())
+
+
+def pinned_generations(db):
+    if not _tables_available(db, "learning_experiences", "learning_experience_sources"):
+        return set()
+    pinned = set()
+    sources = db.execute(
+        "SELECT DISTINCT s.session FROM learning_experience_sources s "
+        "JOIN learning_experiences e ON e.id = s.experience WHERE e.state = 'retained'").fetchall()
+    for source in sources:
+        session = db.execute(
+            "SELECT harness, native_id, archive_generation, origin_host FROM sessions WHERE id = ?",
+            (source["session"],)).fetchone()
+        generation = _evidence_generation(db, session) if session is not None else None
+        if generation is not None:
+            pinned.add(int(generation))
+    return pinned
+
+
 def storage_report(store):
     db = store.db
     database_bytes = Path(store.path).stat().st_size
@@ -881,10 +905,7 @@ def storage_report(store):
 
     sizes = {row["digest"]: int(row["size"]) for row in db.execute("SELECT digest, size FROM archive_object")}
     generation_ids = [int(row[0]) for row in db.execute("SELECT id FROM archive_generation")]
-    latest = {}
-    for row in db.execute("SELECT id, origin_host, harness, native_id FROM archive_generation ORDER BY captured_at, id"):
-        latest[(row["origin_host"], row["harness"], row["native_id"])] = int(row["id"])
-    current_ids = set(latest.values())
+    current_ids = latest_generations(db)
     reachable = set()
     current = set()
     for generation in generation_ids:
@@ -894,17 +915,8 @@ def storage_report(store):
             current |= digests
 
     pinned = set()
-    if _tables_available(db, "learning_experiences", "learning_experience_sources"):
-        sources = db.execute(
-            "SELECT DISTINCT s.session FROM learning_experience_sources s "
-            "JOIN learning_experiences e ON e.id = s.experience WHERE e.state = 'retained'").fetchall()
-        for source in sources:
-            session = db.execute(
-                "SELECT harness, native_id, archive_generation, origin_host FROM sessions WHERE id = ?",
-                (source["session"],)).fetchone()
-            generation = _evidence_generation(db, session) if session is not None else None
-            if generation is not None:
-                pinned |= _generation_digests(db, generation)
+    for generation in pinned_generations(db):
+        pinned |= _generation_digests(db, generation)
 
     def total(digests):
         return sum(sizes.get(digest, 0) for digest in digests)

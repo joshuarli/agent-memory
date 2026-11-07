@@ -17,6 +17,7 @@ from agent_memory import archive as archive_module
 from agent_memory import backup as backup_module
 from agent_memory import learning_sync
 from agent_memory import mirror as mirror_module
+from agent_memory import retention as retention_module
 from agent_memory import transfer as transfer_module
 from agent_memory.store import Store, StoreError, default_state_dir, project_identity, rebuild_index, redact
 from agent_memory.transcripts import canonical_harness
@@ -714,8 +715,21 @@ def _mirror_local(args):
 
 
 def _archive(args):
+    if args.action == "plan" and args.apply:
+        print("agent-sessions archive plan: --apply is not supported; plan is read-only", file=sys.stderr)
+        return 2
     try:
         with Store(_state_dir(args)) as store:
+            if args.action == "plan":
+                result = retention_module.plan(store, time.time())
+                if args.json:
+                    print(json.dumps(result, sort_keys=True))
+                else:
+                    generations = result["generations"]
+                    print("retire=%d prunable_generations=%d prunable_bytes=%d historical_events=%d"
+                          % (len(result["retire"]), generations["prunable"], generations["prunable_bytes"],
+                             result["historical_events"]))
+                return 0
             if args.action == "verify":
                 bad = 0
                 for row in store.db.execute("SELECT id FROM archive_generation ORDER BY id"):
@@ -1126,8 +1140,8 @@ def parser():
                         help="capture sessions from this root during sync")
     mirror.set_defaults(run=_mirror)
 
-    archive = commands.add_parser("archive", help="verify, reindex, compact, or report the local archive")
-    archive.add_argument("action", choices=("status", "verify", "reindex", "prune-legacy", "compact"))
+    archive = commands.add_parser("archive", help="verify, reindex, compact, plan, or report the local archive")
+    archive.add_argument("action", choices=("status", "verify", "reindex", "prune-legacy", "compact", "plan"))
     archive.add_argument("--apply", action="store_true", help="apply pruning or compaction changes")
     archive.add_argument("--json", action="store_true", help="print a machine-readable status document")
     archive.add_argument("--state-dir")
