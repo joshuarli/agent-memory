@@ -5,8 +5,9 @@
 - **Goal:** keep the evidence model; make ordinary recall selective and measurably useful; bound local storage growth; measure all of it before anything is deleted.
 - **Base:** `c8845ee` on `master`. No slice accepted yet.
 - **Next slice:** MQ-1.
-- **In flight:** MQ-1, MQ-2, and the Pi surfacing check.
-- **Blocked on the owner:** approval for the paid Codex run in MQ-5.
+- **In flight:** MQ-3, MQ-5.
+- **Landed:** MQ-1 (`e82ee7b`), MQ-2 (`d1d7d8c`).
+- **Approved:** the paid Codex run in MQ-5 (`--runs 1`, then `--runs 5`).
 
 ## Charter
 
@@ -61,7 +62,7 @@ Temporary task state ages out of ordinary recall. A rare durable constraint with
 
 - **MQ-5 paid run** (owner approval; Codex, `gpt-6-luna` at `medium`): `eval/live_recall.py --live --runs 1` (six runs, one per arm) to check token usage, then `--runs 5` (30 runs). Record the verdict in `README.md` for one model and one task family. This closes AGM-4.
 - **Remote `memory_search` quality:** needs the mirror back online. Deferred.
-- **Pi automatic surfacing:** check whether `usr`'s Pi adapter calls the prompt hook. Read-only in `usr`. Related to AGM-7.
+- **Pi automatic surfacing:** no Pi extension calls the prompt hook. Filed as AGM-9; the fix lives in `usr`.
 
 ## Execution boundary and non-goals
 

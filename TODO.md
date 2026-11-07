@@ -1,5 +1,5 @@
 Prefix: AGM
-Next: 9
+Next: 10
 
 ### AGM-4 · P1 · Run the live evaluation with the hook arms
 
@@ -8,6 +8,15 @@ Next: 9
 - **Problem:** `eval/live_recall.py` now has `hook` and `hook_control` arms, but no paid run has used them, so whether hook-injected results change what agents run or whether the task is completed is still unmeasured. Real-world hook data is too thin to answer it (2 attempts by 2026-11-06).
 - **Recommendation:** With the owner's approval, run `eval/live_recall.py --live --runs 5` (five arms, 25 Codex runs) and record `hook_better_than_treatment` and `hook_control_clean` in `README.md`, scoped to one model and one task family.
 - **Fix with:** none
+- **Effort:** S
+
+### AGM-9 · P2 · Pi prompts get no memory surfacing
+
+- **Area:** Agent learning
+- **Where:** `usr` `dotfiles/base/.pi/agent/extensions/`, `src/agent_memory/learning.py` (`hook` entry point)
+- **Problem:** Claude Code and Codex run `agent-learn hook --harness claude|codex` on `UserPromptSubmit` (`usr` `dotfiles/base/.codex/config.toml:302-306`). Pi's only extension, `git-execution-guard.js`, handles `tool_call` and never calls `agent-learn`, so Pi sessions are indexed but get memory only when the agent calls `recall` itself, which agents did in 51 of 988 sessions.
+- **Recommendation:** Add a Pi extension in `usr` that, on the first task prompt of a session, pipes a `UserPromptSubmit`-shaped payload (event name, cwd, session id, prompt) to `agent-learn hook --harness pi` and adds the returned `additionalContext` to that user turn. Skip it for pi-subagents children. Cover it offline the same way `dotfiles/pi-git-guard-test.mjs` covers the git guard.
+- **Fix with:** do
 - **Effort:** S
 
 ### AGM-5 · P3 · Unsegmented scripts match only whole runs
