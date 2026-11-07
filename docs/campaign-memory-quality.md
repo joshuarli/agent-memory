@@ -3,11 +3,12 @@
 ## Status
 
 - **Goal:** keep the evidence model; make ordinary recall selective and measurably useful; bound local storage growth; measure all of it before anything is deleted.
-- **Landed:** MQ-1 `e82ee7b`, MQ-2 `d1d7d8c`, MQ-3 `b1768b5`, MQ-4 `9824582` (heldout-2), MQ-5 `5531380`, MQ-7 `4ce5f14`, MQ-8 `1aa959d`, MQ-10 `b1a053f`, MQ-12 `112275c`, MQ-13 `f8a3c19`, MQ-14 `128adf4`, MQ-15 `5b21b8f`.
+- **Landed:** MQ-1 `e82ee7b`, MQ-2 `d1d7d8c`, MQ-3 `b1768b5`, MQ-4 `9824582` (heldout-2), MQ-4b `e81d153` (dev), MQ-5 `5531380`, MQ-7 `4ce5f14`, MQ-8 `1aa959d`, MQ-9 `363b62f`, MQ-10 `b1a053f`, MQ-12 `112275c`, MQ-13 `f8a3c19`, MQ-14 `128adf4`, MQ-15 `5b21b8f`.
 - **Applied to the owner's state (approved):** v12 migration and VACUUM (2.896 GB to 2.844 GB); `archive compact --apply` (archive 6.47 GB to 3.02 GB on disk, 0 corrupt, `archive verify` clean before and after).
-- **In flight:** MQ-9, MQ-4b.
+- **In flight:** MQ-11.
+- **Ruling from `archive plan` on the owner's state:** 0 experiences due to retire, 11,532 prunable generations holding 113 MB plaintext, 11 historical events. No enforcement is warranted.
 - **Ruling from the MQ-5 run (`gpt-6-luna`, `medium`, 5 per arm):** baseline 1/5, treatment 0/5 (never called `recall`), hook 3/5, oracle 5/5, controls clean. The hook always retrieved the right experience; the hook-oracle gap is how the line states the fix. MQ-14 targeted it; after MQ-14 the hook went 4/5 with 1/5 repeating the mistake (from 3/5 and 4/5).
-- **Next slice:** MQ-11, tuned on `dev` once MQ-4b labels it, confirmed on `heldout-2`.
+- **Next slice:** MQ-6 (needs the owner to review drafted queries).
 - **Ruling from real data (2026-11-07, `archive status --json` on the owner's index):** database 2.9 GB (`events` 1.88 GB, FTS 630 MB, two identical 120 MB indexes on `events(session, position)`); archive 5.8 GB unique, of which older-generation-only bytes are 113 MB (2%). Compression (MQ-8) is the storage lever. Generation pruning in MQ-9 is worth little and drops to report-only.
 - **Ruling from MQ-4:** heldout-2 returns the answer text for 6 of 71 cases by default and 21 of 71 after one retry, against 24 and 51 session hits. MQ-11 targets span hits, not session hits.
 
