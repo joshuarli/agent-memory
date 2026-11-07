@@ -32,8 +32,8 @@ HOOK_PAYLOAD_BYTES = 1 << 20
 HOOK_PROMPT_ANCHOR_CHARS = 40
 SESSION_TRACE_IDLE_SECONDS = 3600
 RECALL_CALL_WINDOW_SECONDS = 120
-SESSION_ENVIRONMENT: dict[Harness, str] = {"claude": "CLAUDE_CODE_SESSION_ID"}
-SESSION_HELP = "calling session, recorded on the receipt (default: the harness's session variable, e.g. CLAUDE_CODE_SESSION_ID)"
+SESSION_ENVIRONMENT: dict[Harness, str] = {"claude": "CLAUDE_CODE_SESSION_ID", "codex": "CODEX_THREAD_ID"}
+SESSION_HELP = "calling session, recorded on the receipt (default: CLAUDE_CODE_SESSION_ID or CODEX_THREAD_ID when exactly one is set)"
 MAX_EVENTS = 2000
 MAX_REVIEWS = 2
 MAX_MODEL_CALLS_PER_DAY = 24
@@ -95,11 +95,8 @@ def calling_session(explicit: str | None, environ: collections.abc.Mapping[str, 
         if not separator or not native:
             raise LearningError("--session takes HARNESS:ID, for example claude:6f1c2a94-...")
         return qualified_id(canonical_harness(harness), native)
-    for harness, variable in SESSION_ENVIRONMENT.items():
-        native = environ.get(variable)
-        if native:
-            return qualified_id(harness, native)
-    return None
+    exported = [qualified_id(harness, environ[variable]) for harness, variable in SESSION_ENVIRONMENT.items() if environ.get(variable)]
+    return exported[0] if len(exported) == 1 else None
 
 
 def captures(db, project) -> bool:

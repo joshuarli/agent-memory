@@ -1056,13 +1056,18 @@ class CommandTests(CliCase):
         self.env["CLAUDE_CODE_SESSION_ID"] = "6f1c2a94"
         self.run_cli("inspect", hits[0]["ref"], "--project", project)
         self.run_cli("recall", "websocket reconnect backoff", "--project", project)
+        self.env["CODEX_THREAD_ID"] = "01a17552"
+        self.run_cli("inspect", hits[0]["ref"], "--project", project)
+        del self.env["CLAUDE_CODE_SESSION_ID"]
+        self.run_cli("recall", "websocket reconnect backoff", "--project", project)
         rejected = self.run_cli("recall", "orbit_core", "--project", project, "--session", "nonsense:1", check=False)
         self.assertEqual(rejected.returncode, 1)
         self.assertIn("unsupported harness", rejected.stderr)
         store = agent_session_store.Store(self.state)
         self.addCleanup(store.close)
-        sessions = {row[0]: row[1] for row in store.db.execute("SELECT DISTINCT event, session FROM learning_receipts")}
-        self.assertEqual(sessions, {"returned": "rollout-9", "inspected": "claude:6f1c2a94", "abstained": "claude:6f1c2a94"})
+        sessions = [tuple(row) for row in store.db.execute("SELECT event, session FROM learning_receipts WHERE event != 'returned' ORDER BY id")]
+        self.assertEqual(sessions, [("inspected", "claude:6f1c2a94"), ("abstained", "claude:6f1c2a94"), ("inspected", None), ("abstained", "01a17552")])
+        self.assertEqual({row[0] for row in store.db.execute("SELECT session FROM learning_receipts WHERE event = 'returned'")}, {"rollout-9"})
 
     def test_abstention_prints_guidance_on_stderr_and_an_empty_list(self):
         self.prepare_cli(lesson_world())
