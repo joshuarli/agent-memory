@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Opt-in memory-use evaluation against native Codex runs: baseline, retrieved-memory treatment, the prompt hook's injection, and unrelated-task controls."""
+"""Opt-in memory-use evaluation against native Codex runs: baseline, retrieved-memory treatment, the prompt hook's injection, a fixed oracle block, and unrelated-task controls."""
 import argparse
 import importlib.util
 import json
@@ -33,13 +33,13 @@ BENCH_SPEC.loader.exec_module(BENCH)
 
 from agent_memory import learning as agent_learning  # noqa: E402
 from agent_memory import store as agent_session_store  # noqa: E402
-from agent_memory.recall_hook import prompt_context  # noqa: E402
+from agent_memory.recall_hook import HEADER, prompt_context  # noqa: E402
 
 TMP_ROOT = REPOSITORY / ".work" / "tmp"
 MODEL = "gpt-6-luna"
 EFFORT = "medium"
 RUNS_PER_ARM = 3
-ARMS = ("baseline", "treatment", "hook", "control", "hook_control")
+ARMS = ("baseline", "treatment", "hook", "control", "hook_control", "oracle")
 CONTROL_ARMS = frozenset(("control", "hook_control"))
 HOOK_ARMS = frozenset(("hook", "hook_control"))
 TASK_PROMPT = (
@@ -47,6 +47,7 @@ TASK_PROMPT = (
     "Do not modify repository files. Report the outcome."
 )
 CONTROL_PROMPT = "What version is declared in VERSION? Read it and report it. Do not run the test suite or modify files."
+ORACLE_MEMORY = "- instruction lesson-1 (reviewed, 20 days old): The cache test suite is OOM-killed unless run with TIDEPOOL_SHARDS=4; shard count follows os.cpu_count()."
 LESSON_ENV = "TIDEPOOL_SHARDS"
 FIXTURE_FILES = {
     "README.md": "# Tidepool\n\nA sharded cache. Run `python3 tools/run_cache_tests.py` for the cache suite.\n",
@@ -132,6 +133,10 @@ def hook_prompt(repo, prompt):
     return (context + "\n\n" + prompt if context else prompt), context is not None
 
 
+def oracle_prompt():
+    return HEADER + "\n" + ORACLE_MEMORY + "\n\n" + TASK_PROMPT
+
+
 def executes(command, script):
     return re.search(r"(?:^|[\s;&|'\"(])(?:\S+=\S+\s+)*python3?\s[^;&|]*?" + re.escape(script), command) is not None
 
@@ -202,6 +207,7 @@ def verdict(summary, runs):
         "status": "evaluated",
         "treatment_better_than_baseline": better("treatment", "baseline"),
         "hook_better_than_treatment": better("hook", "treatment"),
+        "oracle_better_than_hook": better("oracle", "hook"),
         "control_clean": clean("control"),
         "hook_control_clean": clean("hook_control"),
         "evidence_level": "smoke validation" if runs < 5 else "small measured sample",
@@ -220,6 +226,8 @@ def run_arm(codex, reviewer, scratch, arm, index, prompt_schema):
     prompt, injected = CONTROL_PROMPT if arm in CONTROL_ARMS else TASK_PROMPT, False
     if arm in HOOK_ARMS:
         prompt, injected = hook_prompt(repo, prompt)
+    elif arm == "oracle":
+        prompt, injected = oracle_prompt(), True
     started = time.time()
     result = LIVE._run_events(codex, repo, prompt_schema, env, prompt, MODEL, EFFORT, sandbox="workspace-write")
     result["elapsed_seconds"] = time.time() - started

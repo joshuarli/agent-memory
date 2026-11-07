@@ -80,6 +80,21 @@ class MemoryUseEvaluationTests(unittest.TestCase):
         self.assertIn(EVAL.LESSON_ENV, task)
         self.assertEqual(EVAL.hook_prompt(repo, EVAL.CONTROL_PROMPT), (EVAL.CONTROL_PROMPT, False))
 
+    def test_oracle_prompt_carries_the_lesson_without_asking_retrieval(self):
+        with mock.patch.object(EVAL, "prompt_context", side_effect=AssertionError("retrieval")), \
+                mock.patch.object(EVAL, "hook_prompt", side_effect=AssertionError("retrieval")):
+            task = EVAL.oracle_prompt()
+        self.assertTrue(task.startswith(HEADER) and task.endswith(EVAL.TASK_PROMPT), task)
+        self.assertIn("TIDEPOOL_SHARDS=4", task)
+
+    def test_oracle_arm_gets_the_lesson_and_is_scored_as_injected(self):
+        reviewer = mock.Mock()
+        reviewer._runtime_environment.return_value = {}
+        with mock.patch.object(EVAL.LIVE, "_run_events", return_value={"status": "complete", "commands": []}) as run:
+            metrics = EVAL.run_arm("codex", reviewer, self.scratch(), "oracle", 0, Path("schema.json"))
+        self.assertIn("TIDEPOOL_SHARDS=4", run.call_args.args[4])
+        self.assertTrue(metrics["hook_injected"])
+
     def test_recalling_is_not_applying_and_reading_is_not_running(self):
         recall = command("agent-learn recall 'cache TIDEPOOL_SHARDS'", 0, "TIDEPOOL_SHARDS")
         read = command("cat tools/run_cache_tests.py", 0, "OOM_KILLED")
@@ -110,16 +125,21 @@ class MemoryUseEvaluationTests(unittest.TestCase):
             base.update(extra)
             return base
         per_run = {"baseline": [row(repeated_mistake_ran_without_lesson=True, attempts_at_suite=2), row(run_status="unverified")],
-                   "treatment": [row(recall_invoked=True, lesson_applied=True)], "hook": [row(hook_injected=True, lesson_applied=True)],
+                   "treatment": [row(recall_invoked=True, lesson_applied=True)], "hook": [row(hook_injected=True, lesson_applied=True, repeated_mistake_ran_without_lesson=True)],
+                   "oracle": [row(hook_injected=True, lesson_applied=True)],
                    "control": [row()], "hook_control": [row(unwanted_memory_effect=True)]}
         summary = EVAL.summarize(per_run)
         self.assertEqual(summary["baseline"]["complete_runs"], 1)
+        self.assertIn("oracle", summary)
         verdict = EVAL.verdict(summary, 1)
         self.assertTrue(verdict["treatment_better_than_baseline"])
         self.assertEqual((verdict["hook_better_than_treatment"], verdict["control_clean"], verdict["hook_control_clean"]), (False, True, False))
+        self.assertTrue(verdict["oracle_better_than_hook"])
         self.assertEqual(summary["hook"]["hook_injected"], 1)
         self.assertEqual(verdict["evidence_level"], "smoke validation")
         self.assertIn("no causal", verdict["claim"])
+        without_oracle = {arm: rows for arm, rows in per_run.items() if arm != "oracle"}
+        self.assertEqual(EVAL.verdict(EVAL.summarize(without_oracle), 1)["status"], "incomplete")
         self.assertEqual(EVAL.verdict(EVAL.summarize({arm: [] for arm in EVAL.ARMS}), 1)["status"], "incomplete")
 
 
