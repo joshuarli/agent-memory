@@ -323,12 +323,14 @@ def _resolved_failures(events, runs, outcomes):
         if not edits and not between and success.command == run.command:
             continue
         if edits:
-            change = "fixed by changing " + ", ".join("`%s`" % path for path in edits)
+            claim = "Change %s: `%s` failed with `%s` until they were edited." % (
+                ", ".join("`%s`" % path for path in edits), clip(run.command, 120), signature)
         elif between:
-            change = "passed after running `%s`" % clip(between[-1].command, 120)
+            claim = "Run `%s` first: `%s` failed with `%s` until it was run." % (
+                clip(between[-1].command, 120), clip(run.command, 120), signature)
         else:
-            change = "passed as `%s`" % clip(success.command, 120)
-        claim = "`%s` failed with `%s`; %s." % (clip(run.command, 120), signature, change)
+            claim = "Run `%s`: `%s` failed with `%s`." % (
+                clip(success.command, 120), clip(run.command, 120), signature)
         applies = "Running `%s`%s." % (prefix, (" after editing " + ", ".join("`%s`" % path for path in edits)) if edits else "")
         context_index = next((index for index in range(run.out, success.call) if events[index]["kind"] == "tool-call" and (edited_paths(events, index, index + 1) or (between and events[index]["text"] == events[between[-1].call]["text"]))), None)
         sources = [source(events, run.out, "trigger")] + [source(events, success.out, "outcome")]

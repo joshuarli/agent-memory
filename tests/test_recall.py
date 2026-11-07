@@ -314,6 +314,37 @@ class CaptureTests(RecallCase):
         self.assertTrue({"trigger", "outcome"} <= roles)
         self.assertNotIn("fixed", row["claim"].lower().split(".")[0].replace("fixed by", ""))
 
+    def test_resolved_failure_claim_leads_with_the_successful_command(self):
+        self.build(lesson_world())
+        claim = self.store.db.execute(
+            "SELECT claim FROM learning_experiences WHERE detector = 'resolved_failure' AND project = ?",
+            (self.ident["beta"],)).fetchone()["claim"]
+        self.assertTrue(claim.startswith("Run `make -j8 CFLAGS=-O2`:"), claim)
+        self.assertIn("`make -j8` failed with", claim)
+        self.assertIn("unrecognized option -fzorp", claim)
+
+    def test_resolved_failure_claim_leads_with_the_command_that_resolved_it(self):
+        self.build(lesson_world())
+        claim = self.store.db.execute(
+            "SELECT claim FROM learning_experiences WHERE detector = 'resolved_failure' AND project = ?",
+            (self.ident["alpha"],)).fetchone()["claim"]
+        self.assertTrue(claim.startswith("Run `pip install -e .` first:"), claim)
+        self.assertIn("`pytest -q tests/test_ingest.py` failed with", claim)
+        self.assertIn("ModuleNotFoundError", claim)
+
+    def test_resolved_failure_claim_leads_with_the_edited_paths(self):
+        patch = "apply_patch '*** Begin Patch\n*** Update File: src/app.py\n@@\n-return 1\n+return 2\n*** End Patch'"
+        spec = fixture({"alpha": BASE}, [episode("e", "alpha", [
+            {"user": "tests fail on the runner"},
+            tool("pytest -q tests/test_app.py", "E   AssertionError: main returned 1\nFAILED tests/test_app.py::test_main", 1),
+            tool(patch, "Success. Updated src/app.py", 0),
+            tool("pytest -q tests/test_app.py", "1 passed in 0.2s", 0)], age=6)])
+        self.build(spec)
+        claim = self.store.db.execute("SELECT claim FROM learning_experiences WHERE detector = 'resolved_failure'").fetchone()["claim"]
+        self.assertTrue(claim.startswith("Change `src/app.py`:"), claim)
+        self.assertIn("`pytest -q tests/test_app.py` failed with", claim)
+        self.assertIn("AssertionError: main returned 1", claim)
+
     def test_assistant_claim_without_observed_success_is_not_experience(self):
         spec = fixture({"alpha": BASE}, [episode("e", "alpha", [
             {"user": "tests fail"}, tool("pytest -q", PYTEST_FAIL, 1),
