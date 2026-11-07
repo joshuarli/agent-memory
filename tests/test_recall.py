@@ -456,6 +456,54 @@ class CaptureTests(RecallCase):
         self.assertIn("not instructions", inspected["instruction_note"])
 
 
+class HistoricalSourceTests(RecallCase):
+    def experience_and_trigger(self):
+        experience = self.store.db.execute(
+            "SELECT id FROM learning_experiences WHERE project = ?", (self.ident["alpha"],)).fetchone()[0]
+        source = self.store.db.execute(
+            "SELECT session, position, digest FROM learning_experience_sources WHERE experience = ? AND role = 'trigger'",
+            (experience,)).fetchone()
+        return experience, (source[0], source[1], source[2])
+
+    def event_result(self, response, source):
+        ref = "event:%s@%d" % (source[0], source[1])
+        return next(item for item in response["results"] if item["ref"] == ref)
+
+    def test_withdrawn_experience_source_event_is_historical(self):
+        self.build(lesson_world())
+        experience, source = self.experience_and_trigger()
+        self.learner.withdraw("experience:%d" % experience, 1)
+        event = self.event_result(self.ask("alpha", "ModuleNotFoundError orbit_core"), source)
+        self.assertEqual(event["status"], "historical")
+        self.assertIn("withdrawn_experience:experience:%d" % experience, event["reasons"])
+
+    def test_superseded_experience_source_event_is_historical(self):
+        self.build(lesson_world())
+        experience, source = self.experience_and_trigger()
+        with self.store.db:
+            self.store.db.execute(
+                "UPDATE learning_experiences SET state = 'superseded', state_reason = 'test', state_at = 1 WHERE id = ?", (experience,))
+        event = self.event_result(self.ask("alpha", "ModuleNotFoundError orbit_core"), source)
+        self.assertEqual(event["status"], "historical")
+        self.assertIn("superseded_experience:experience:%d" % experience, event["reasons"])
+
+    def test_event_shared_with_a_retained_experience_is_not_historical(self):
+        self.build(lesson_world())
+        experience, source = self.experience_and_trigger()
+        self.learner.withdraw("experience:%d" % experience, 1)
+        with self.store.db:
+            retained = self.store.db.execute(
+                "INSERT INTO learning_experiences(project, kind, claim, applies_when, identifiers, fingerprint, basis, detector, observed_at, captured_at) "
+                "VALUES (?, 'method', 'unrelated placeholder claim', 'never', 'placeholder', 'shared-source-retained', 'deterministic', 'test', 1, 1)",
+                (self.ident["alpha"],)).lastrowid
+            self.store.db.execute(
+                "INSERT INTO learning_experience_sources(experience, session, position, digest, role) VALUES (?, ?, ?, ?, 'trigger')",
+                (retained, *source))
+        event = self.event_result(self.ask("alpha", "ModuleNotFoundError orbit_core"), source)
+        self.assertNotEqual(event["status"], "historical")
+        self.assertFalse(any(reason.startswith("withdrawn_experience:") for reason in event["reasons"]))
+
+
 class ReceiptTests(RecallCase):
     def test_receipts_inspection_and_feedback_never_grant_authority(self):
         self.build(lesson_world())
@@ -1234,6 +1282,32 @@ class PromptHookTests(CliCase):
         self.assertIn("412 MB/s", context)
         self.assertNotIn("Looking at the attached", context)
         self.assertEqual(len(context.splitlines()), 2, "the copy of the prompt is not a line of its own")
+
+    def test_a_withdrawn_experiences_source_event_is_never_injected(self):
+        spec = fixture({"alpha": BASE}, [
+            episode("source", "alpha", [
+                {"user": "fix the tests"},
+                tool("pytest -q tests/test_ingest.py", PYTEST_FAIL, 1),
+                tool("pip install -e .", "Successfully installed package", 0),
+                tool("pytest -q tests/test_ingest.py", "1 passed in 0.4s", 0)], age=20),
+            episode("other", "alpha", [
+                {"user": "what did the bootstrap log say"},
+                {"assistant": "logs/setup.log records ModuleNotFoundError orbit_core during bootstrap"}], age=12),
+        ])
+        self.prepare_cli(spec)
+        self.alpha = str(self.world.projects["alpha"]["path"])
+        self.run_cli("observe", "--project", self.alpha, "--run")
+        with sqlite3.connect(Path(self.state) / "sessions.sqlite3") as db:
+            experience = db.execute("SELECT id FROM learning_experiences").fetchone()[0]
+            session, position = db.execute(
+                "SELECT session, position FROM learning_experience_sources WHERE experience = ? AND role = 'trigger'",
+                (experience,)).fetchone()
+        source_ref = "event:%s@%d" % (session, position)
+        self.run_cli("withdraw", "experience:%d" % experience)
+        output, _ = self.hook(self.TASK)
+        context = output["hookSpecificOutput"]["additionalContext"]
+        self.assertNotIn(source_ref, context)
+        self.assertIn("logs/setup.log", context)
 
     def test_a_locked_index_never_holds_a_prompt_past_the_deadline(self):
         self.observed_world()

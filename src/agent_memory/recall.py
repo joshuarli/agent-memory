@@ -634,7 +634,28 @@ class Retriever:
             "WHERE l.older = ? AND l.relation = 'supersedes' AND n.state = 'retained'", (ref,)).fetchone()
         return row is not None
 
+    def _historical_source(self, candidate):
+        if candidate.kind != "event":
+            return None
+        support = candidate.supports[0]
+        rows = self.db.execute(
+            "SELECT e.id AS id, e.state AS state FROM learning_experience_sources s JOIN learning_experiences e ON e.id = s.experience "
+            "WHERE s.session = ? AND s.position = ? ORDER BY e.id", (support["session"], support["position"])).fetchall()
+        if not rows or any(row["state"] in ("retained", "retired") for row in rows):
+            return None
+        for row in rows:
+            if row["state"] == "withdrawn":
+                return "withdrawn_experience:experience:%d" % row["id"]
+        for row in rows:
+            if row["state"] == "superseded":
+                return "superseded_experience:experience:%d" % row["id"]
+        return None
+
     def _finish(self, candidate):
+        historical = self._historical_source(candidate)
+        if historical is not None:
+            candidate.status = "historical"
+            candidate.reasons.append(historical)
         if self._weak:
             candidate.tier = "lead"
             candidate.reasons.append("low_confidence")

@@ -45,7 +45,7 @@ def echoes(prompt: str, item: dict[str, Any]) -> bool:
 def render(prompt: str, results: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], Optional[str]]:
     renderable = []
     for item in results:
-        if echoes(prompt, item):
+        if item["status"] == "historical" or echoes(prompt, item):
             continue
         if len(renderable) == RESULT_LIMIT:
             break
