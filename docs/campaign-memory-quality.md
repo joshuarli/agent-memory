@@ -4,7 +4,8 @@
 
 - **Goal:** keep the evidence model; make ordinary recall selective and measurably useful; bound local storage growth; measure all of it before anything is deleted.
 - **Landed:** MQ-1 `e82ee7b`, MQ-2 `d1d7d8c`, MQ-3 `b1768b5`, MQ-4 `9824582` (heldout-2 only), MQ-5 `5531380`, MQ-7 `4ce5f14`, MQ-12 `112275c`.
-- **In flight:** the MQ-5 paid run, `--runs 5` on the fixed hook.
+- **In flight:** MQ-8, MQ-13.
+- **Ruling from the MQ-5 run (`gpt-6-luna`, `medium`, 5 per arm):** baseline 1/5, treatment 0/5 (never called `recall`), hook 3/5, oracle 5/5, controls clean. The hook always retrieved the right experience; the hook-oracle gap is how the line states the fix. MQ-14 targets it.
 - **Next slice:** MQ-8, then MQ-13.
 - **Ruling from real data (2026-11-07, `archive status --json` on the owner's index):** database 2.9 GB (`events` 1.88 GB, FTS 630 MB, two identical 120 MB indexes on `events(session, position)`); archive 5.8 GB unique, of which older-generation-only bytes are 113 MB (2%). Compression (MQ-8) is the storage lever. Generation pruning in MQ-9 is worth little and drops to report-only.
 - **Ruling from MQ-4:** heldout-2 returns the answer text for 6 of 71 cases by default and 21 of 71 after one retry, against 24 and 51 session hits. MQ-11 targets span hits, not session hits.
@@ -55,6 +56,7 @@
 | MQ-11 | Retrieval without models: improve default span hits, and session hits on paraphrase and trajectory queries. Candidate methods are project-vocabulary expansion from experience identifiers and claim/applies-when weighting. | `src/agent_memory/recall.py` | MQ-3, MQ-4 | The gate shows a paraphrase gain on `heldout-2`, no abstention or leakage regression, and no loss on MQ-6. The baseline is raised in the same commit. |
 | MQ-12 | Hook lines may use the unused part of the 600-character budget and are cut at a word boundary. | `src/agent_memory/recall_hook.py`, `tests/test_recall.py` | none | Landed. The live-eval hook line carries the full fixed command. |
 | MQ-13 | Drop `events_session_position`, which duplicates the UNIQUE autoindex on `events(session, position)` (120 MB on the owner's index). | `src/agent_memory/store.py`, `tests/test_sessions.py` | none | `EXPLAIN QUERY PLAN` for the session/position lookups uses the autoindex; `tests/test_sessions.py` passes; a migrated copy of an existing database loses only that index. |
+| MQ-14 | Experience summaries lead with the resolution (the command, setting, or change that worked) before the failure narrative, so a hook line states the fix first. | `src/agent_memory/experience.py`, `tests/test_learning.py` | MQ-12 | Gate shows no hit, abstention, or span regression; the live-eval hook line begins with the fix. Re-run `--runs 5` only with owner approval. |
 
 ### Simulated-clock scenarios (MQ-9)
 
@@ -62,7 +64,6 @@ Temporary task state ages out of ordinary recall. A rare durable constraint with
 
 ## Needs environment
 
-- **MQ-5 paid run** (owner approval; Codex, `gpt-6-luna` at `medium`): `eval/live_recall.py --live --runs 1` (six runs, one per arm) to check token usage, then `--runs 5` (30 runs). Record the verdict in `README.md` for one model and one task family. This closes AGM-4.
 - **Remote `memory_search` quality:** needs the mirror back online. Deferred.
 - **Pi automatic surfacing:** no Pi extension calls the prompt hook. Filed as AGM-9; the fix lives in `usr`.
 
