@@ -21,7 +21,7 @@ from agent_memory.transcripts import opencode_database, opencode_events, opencod
 from agent_memory.types import DATABASE_HARNESSES, HARNESSES, OPENCODE_DB, OPENCODE_SUBPOSITIONS, SUBSTANTIVE_KINDS, Harness
 
 DB_FILENAME = "sessions.sqlite3"
-SCHEMA_VERSION = 11
+SCHEMA_VERSION = 12
 ARCHIVE_DIRNAME = "archive"
 ARCHIVE_OBJECTS = "objects"
 ARCHIVE_COMPANIONS = {"grok": ("summary.json", "events.jsonl")}
@@ -423,7 +423,7 @@ class Store:
             existing = {row[0] for row in self.db.execute("SELECT name FROM sqlite_master WHERE type='table'")}
             if version == 0 and existing & owned:
                 raise StoreError("session index has an unversioned schema; run `agent-sessions doctor --rebuild-index` to rebuild only index tables")
-            if version not in (0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, SCHEMA_VERSION):
+            if version not in (0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, SCHEMA_VERSION):
                 raise StoreError("unsupported session index schema version " + str(version))
             if version == 1:
                 if not self._schema_ready(1):
@@ -474,7 +474,12 @@ class Store:
                 if not self._schema_ready(10):
                     raise StoreError("session index schema is incomplete; run `agent-sessions doctor --rebuild-index` to rebuild only index tables")
                 self._migrate_v10()
-                return
+                version = 11
+            if version == 11:
+                if not self._schema_ready(11):
+                    raise StoreError("session index schema is incomplete; run `agent-sessions doctor --rebuild-index` to rebuild only index tables")
+                self._migrate_v11()
+                version = 12
             if version == SCHEMA_VERSION:
                 if not self._schema_ready(SCHEMA_VERSION):
                     raise StoreError("session index schema is incomplete; run `agent-sessions doctor --rebuild-index` to rebuild only index tables")
@@ -502,6 +507,7 @@ class Store:
         try:
             version = self.db.execute("PRAGMA user_version").fetchone()[0]
             existing = {row[0] for row in self.db.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+            indexes = {row[0] for row in self.db.execute("SELECT name FROM sqlite_master WHERE type='index'")}
             triggers = {row[0] for row in self.db.execute("SELECT name FROM sqlite_master WHERE type='trigger'")}
             session_columns = {row[1] for row in self.db.execute("PRAGMA table_info(sessions)")}
             event_columns = {row[1] for row in self.db.execute("PRAGMA table_info(events)")}
@@ -527,6 +533,7 @@ class Store:
             and (expected_version < 9 or {"manifest_digest", "session_metadata"} <= generation_columns)
             and (expected_version < 10 or "mirror_remote" in existing)
             and (expected_version < 11 or {"snapshot_failures", "snapshot_failed_at"} <= mirror_remote_columns)
+            and (expected_version < 12 or "events_session_position" not in indexes)
         )
 
     def _migrate_v1(self):
@@ -738,6 +745,17 @@ class Store:
             self.db.rollback()
             raise
 
+    def _migrate_v11(self):
+        try:
+            self.db.executescript(
+                "BEGIN IMMEDIATE;"
+                "DROP INDEX IF EXISTS events_session_position;"
+                "PRAGMA user_version = 12;COMMIT;"
+            )
+        except sqlite3.DatabaseError:
+            self.db.rollback()
+            raise
+
     def _create_schema(self):
         self.db.executescript(
             "BEGIN IMMEDIATE;"
@@ -763,7 +781,6 @@ class Store:
             "position INTEGER NOT NULL, kind TEXT NOT NULL, text TEXT NOT NULL, timestamp TEXT, call_id TEXT, "
             "raw_type TEXT, digest TEXT NOT NULL, outcome TEXT CHECK(outcome IN ('ok','error')), entry TEXT, parent_entry TEXT, "
             "synthetic_id INTEGER NOT NULL DEFAULT 0, UNIQUE(session, position));"
-            "CREATE INDEX events_session_position ON events(session, position);"
             "CREATE VIRTUAL TABLE events_fts USING fts5(text, content='events', content_rowid='id');"
             "CREATE TRIGGER events_ai AFTER INSERT ON events BEGIN "
             "INSERT INTO events_fts(rowid, text) VALUES (new.id, new.text); END;"

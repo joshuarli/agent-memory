@@ -542,6 +542,36 @@ class SessionStoreTests(unittest.TestCase):
             store.refresh(roots, project=self.project_id)
             self.assertEqual(store.db.execute("SELECT entry, parent_entry FROM events WHERE session = 'pi:p1' AND kind = 'user'").fetchone()[:], ("u1", None))
 
+    def test_fresh_schema_has_no_redundant_events_session_position_index(self):
+        with Store(self.state) as store:
+            indexes = {row[0] for row in store.db.execute(
+                "SELECT name FROM sqlite_master WHERE type='index' AND tbl_name='events'")}
+            self.assertNotIn("events_session_position", indexes)
+            self.assertIn("sqlite_autoindex_events_1", indexes)
+
+    def test_v11_schema_drops_redundant_events_session_position_index(self):
+        self.transcript("legacy-v11", records=[message("v11evidence"), message("v11second", "assistant")])
+        with Store(self.state) as store:
+            store.refresh([self.transcripts], project=self.project_id)
+            before = [tuple(row) for row in store.db.execute(
+                "SELECT session, position, digest, kind FROM events ORDER BY session, position")]
+        self.assertGreater(len(before), 0)
+        with sqlite3.connect(Store.database_path(self.state)) as db:
+            db.execute("CREATE INDEX IF NOT EXISTS events_session_position ON events(session, position)")
+            db.execute("PRAGMA user_version = 11")
+        with Store(self.state) as store:
+            self.assertEqual(store.db.execute("PRAGMA user_version").fetchone()[0], STORE_MODULE.SCHEMA_VERSION)
+            indexes = {row[0] for row in store.db.execute(
+                "SELECT name FROM sqlite_master WHERE type='index' AND tbl_name='events'")}
+            self.assertNotIn("events_session_position", indexes)
+            self.assertIn("sqlite_autoindex_events_1", indexes)
+            after = [tuple(row) for row in store.db.execute(
+                "SELECT session, position, digest, kind FROM events ORDER BY session, position")]
+            self.assertEqual(before, after)
+        with Store(self.state) as store:
+            self.assertEqual(store.db.execute("PRAGMA user_version").fetchone()[0], STORE_MODULE.SCHEMA_VERSION)
+            self.assertEqual(store.db.execute("SELECT count(*) FROM events").fetchone()[0], len(before))
+
     def test_active_branch_drops_abandoned_pi_branches_only(self):
         header = {"type": "session", "version": 3, "id": "branchy", "timestamp": "2026-10-24T23:28:22.773Z", "cwd": str(self.project)}
 
