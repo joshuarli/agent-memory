@@ -176,6 +176,9 @@
    ],
    "valid_memories": [
     "m-nb-sign"
+   ],
+   "answer": [
+    "fastlane match appstore"
    ]
   },
   {
@@ -187,6 +190,9 @@
    "expect": "match",
    "relevant": [
     "nb-002"
+   ],
+   "answer": [
+    "NSDictionary"
    ]
   },
   {
@@ -198,6 +204,9 @@
    "expect": "match",
    "relevant": [
     "nb-003"
+   ],
+   "answer": [
+    "kCGImageSourceThumbnailMaxPixelSize=300"
    ]
   },
   {
@@ -209,6 +218,9 @@
    "expect": "match",
    "relevant": [
     "nb-004"
+   ],
+   "answer": [
+    "Core Data for 1.0"
    ]
   },
   {
@@ -220,6 +232,9 @@
    "expect": "match",
    "relevant": [
     "nb-005"
+   ],
+   "answer": [
+    "Xcode 16"
    ]
   },
   {
@@ -231,6 +246,9 @@
    "expect": "match",
    "relevant": [
     "nb-005"
+   ],
+   "answer": [
+    "iOS 18 SDK"
    ]
   },
   {

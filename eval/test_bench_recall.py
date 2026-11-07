@@ -69,6 +69,63 @@ class CompareTests(unittest.TestCase):
         current = dataset(default=summary(hits=6, abstentions=3, size=90.0))
         self.assertEqual(EVAL.compare(dataset(), current), [])
 
+    def test_dropped_span_hits_is_reported(self):
+        baseline = dataset(default=summary(categories={
+            "exact_identifier": {"hits": 5, "abstentions": 0, "span_hits": 3, "span_labeled": 4},
+        }))
+        current = dataset(default=summary(categories={
+            "exact_identifier": {"hits": 5, "abstentions": 0, "span_hits": 2, "span_labeled": 4},
+        }))
+        lines = EVAL.compare(baseline, current)
+        self.assertTrue(any("span_hits dropped" in line for line in lines), lines)
+
+    def test_baseline_without_span_keys_is_not_gated(self):
+        baseline = dataset(default=summary(categories={
+            "exact_identifier": {"hits": 5, "abstentions": 0},
+        }))
+        current = dataset(default=summary(categories={
+            "exact_identifier": {"hits": 5, "abstentions": 0, "span_hits": 0, "span_labeled": 3},
+        }))
+        self.assertEqual(EVAL.compare(baseline, current), [])
+
+    def test_disappearing_span_keys_are_reported(self):
+        baseline = dataset(default=summary(categories={
+            "exact_identifier": {"hits": 5, "abstentions": 0, "span_hits": 3, "span_labeled": 4},
+        }))
+        current = dataset(default=summary(categories={
+            "exact_identifier": {"hits": 5, "abstentions": 0},
+        }))
+        lines = EVAL.compare(baseline, current)
+        self.assertTrue(any("span_hits disappeared" in line for line in lines), lines)
+
+
+class SpanTests(unittest.TestCase):
+    def test_span_matching_is_case_insensitive(self):
+        case = {"expect": "match", "relevant": [], "answer": ["Xmx3g"]}
+        results = [{"sessions": [], "tier": "lead", "text": "heap set to xmx3G"}]
+        metrics = EVAL.case_metrics(case, results, {}, {})
+        self.assertEqual(metrics["span5"], 1)
+
+    def test_span_matching_normalizes_whitespace(self):
+        case = {"expect": "match", "relevant": [], "answer": ["unique: [period: 3600, keys: [:user_id]]"]}
+        results = [{"sessions": [], "tier": "lead", "text": "kept\n  unique:   [period: 3600,\tkeys: [:user_id]]  here"}]
+        metrics = EVAL.case_metrics(case, results, {}, {})
+        self.assertEqual(metrics["span5"], 1)
+
+    def test_unlabeled_case_has_no_span5(self):
+        results = [{"sessions": [], "tier": "lead", "text": "anything"}]
+        metrics = EVAL.case_metrics({"expect": "match", "relevant": []}, results, {}, {})
+        self.assertNotIn("span5", metrics)
+
+    def test_unlabeled_case_excluded_from_category_span_counts(self):
+        per_case = [
+            ({"expect": "match", "category": "c", "answer": ["x"]}, {"recall5": 1, "span5": 1}),
+            ({"expect": "match", "category": "c"}, {"recall5": 1}),
+        ]
+        counts = EVAL.category_counts(per_case)
+        self.assertEqual(counts["c"]["span_labeled"], 1)
+        self.assertEqual(counts["c"]["span_hits"], 1)
+
 
 if __name__ == "__main__":
     unittest.main()

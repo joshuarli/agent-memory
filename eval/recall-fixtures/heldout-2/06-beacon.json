@@ -221,6 +221,9 @@
    ],
    "misleading": [
     "bc-002"
+   ],
+   "answer": [
+    "outside the transaction"
    ]
   },
   {
@@ -232,6 +235,9 @@
    "expect": "match",
    "relevant": [
     "bc-002"
+   ],
+   "answer": [
+    "Testcontainers postgres:16"
    ]
   },
   {
@@ -243,6 +249,9 @@
    "expect": "match",
    "relevant": [
     "bc-003"
+   ],
+   "answer": [
+    "hypersistence-utils-hibernate-63"
    ]
   },
   {
@@ -254,6 +263,9 @@
    "expect": "match",
    "relevant": [
     "bc-003"
+   ],
+   "answer": [
+    "3.7.3"
    ]
   },
   {
@@ -265,6 +277,9 @@
    "expect": "match",
    "relevant": [
     "bc-004"
+   ],
+   "answer": [
+    "pgjdbc 42.8"
    ]
   },
   {
@@ -280,6 +295,9 @@
    "forbidden": [
     "bc-001",
     "bc-005"
+   ],
+   "answer": [
+    "partition count to 3"
    ]
   },
   {
@@ -294,6 +312,9 @@
    ],
    "forbidden": [
     "bb-001"
+   ],
+   "answer": [
+    "Slack webhook"
    ]
   },
   {

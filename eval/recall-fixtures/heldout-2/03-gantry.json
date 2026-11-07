@@ -223,6 +223,9 @@
    ],
    "valid_memories": [
     "m-gt-subnet"
+   ],
+   "answer": [
+    "terraform.tfvars"
    ]
   },
   {
@@ -234,6 +237,9 @@
    "expect": "match",
    "relevant": [
     "gt-002"
+   ],
+   "answer": [
+    "force-unlock"
    ]
   },
   {
@@ -245,6 +251,9 @@
    "expect": "match",
    "relevant": [
     "gt-002"
+   ],
+   "answer": [
+    "DynamoDB lock"
    ]
   },
   {
@@ -262,6 +271,9 @@
    ],
    "misleading": [
     "gt-002"
+   ],
+   "answer": [
+    "visibility_timeout_seconds = 180"
    ]
   },
   {
@@ -273,6 +285,9 @@
    "expect": "match",
    "relevant": [
     "gt-004"
+   ],
+   "answer": [
+    "~> 5.31"
    ]
   },
   {
@@ -284,6 +299,9 @@
    "expect": "match",
    "relevant": [
     "gt-005"
+   ],
+   "answer": [
+    "203.0.113.9/32"
    ]
   },
   {
@@ -295,6 +313,9 @@
    "expect": "match",
    "relevant": [
     "gt-002"
+   ],
+   "answer": [
+    "6f9a1e2c-7a31-4e0d-9b53-0c3f41d9a2aa"
    ]
   },
   {

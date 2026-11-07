@@ -263,6 +263,9 @@
    "expect": "match",
    "relevant": [
     "ke-004"
+   ],
+   "answer": [
+    "arm64-v8a"
    ]
   },
   {
@@ -280,6 +283,9 @@
    ],
    "forbidden": [
     "kw-001"
+   ],
+   "answer": [
+    "com.google.gson.reflect.TypeToken"
    ]
   },
   {
@@ -297,6 +303,9 @@
    ],
    "forbidden": [
     "kw-001"
+   ],
+   "answer": [
+    "-keep class * extends com.google.gson.reflect.TypeToken"
    ]
   },
   {
@@ -311,6 +320,9 @@
    ],
    "valid_memories": [
     "m-ke-heap"
+   ],
+   "answer": [
+    "Xmx3g"
    ]
   },
   {
@@ -322,6 +334,9 @@
    "expect": "match",
    "relevant": [
     "ke-003"
+   ],
+   "answer": [
+    "800 ms"
    ]
   },
   {
@@ -344,6 +359,9 @@
    "expect": "match",
    "relevant": [
     "ke-005"
+   ],
+   "answer": [
+    "room.schemaLocation"
    ]
   },
   {
@@ -366,6 +384,9 @@
    ],
    "forbidden": [
     "ke-001"
+   ],
+   "answer": [
+    "kotlinx.serialization"
    ]
   },
   {
@@ -380,6 +401,9 @@
    ],
    "misleading": [
     "ke-004"
+   ],
+   "answer": [
+    "R8 strips the generic signature"
    ]
   },
   {

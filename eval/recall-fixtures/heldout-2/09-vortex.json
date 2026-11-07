@@ -167,6 +167,9 @@
    ],
    "valid_memories": [
     "m-vx-swap"
+   ],
+   "answer": [
+    "glfwWaitEvents"
    ]
   },
   {
@@ -178,6 +181,9 @@
    "expect": "match",
    "relevant": [
     "vx-001"
+   ],
+   "answer": [
+    "0x0 framebuffer"
    ]
   },
   {
@@ -189,6 +195,9 @@
    "expect": "match",
    "relevant": [
     "vx-002"
+   ],
+   "answer": [
+    "DEPFILE"
    ]
   },
   {
@@ -200,6 +209,9 @@
    "expect": "match",
    "relevant": [
     "vx-003"
+   ],
+   "answer": [
+    "kInstanceStride"
    ]
   },
   {
@@ -211,6 +223,9 @@
    "expect": "match",
    "relevant": [
     "vx-004"
+   ],
+   "answer": [
+    "FXAA"
    ]
   },
   {
@@ -222,6 +237,9 @@
    "expect": "match",
    "relevant": [
     "vx-003"
+   ],
+   "answer": [
+    "heap-buffer-overflow"
    ]
   },
   {
@@ -242,6 +260,10 @@
    "relevant": [
     "vx-001",
     "vx-003"
+   ],
+   "answer": [
+    "glfwWaitEvents",
+    "kInstanceStride"
    ]
   },
   {

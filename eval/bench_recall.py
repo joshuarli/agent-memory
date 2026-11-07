@@ -37,6 +37,30 @@ def _line(value):
     return (json.dumps(value, separators=(",", ":"), ensure_ascii=False) + "\n").encode()
 
 
+def normalize(text):
+    return " ".join(text.split()).casefold()
+
+
+def episode_text(episode):
+    parts = []
+    for step in episode.get("turns", []):
+        for key in ("user", "assistant"):
+            value = step.get(key)
+            if isinstance(value, str):
+                parts.append(value)
+        tool = step.get("tool")
+        if isinstance(tool, dict):
+            for key in ("cmd", "output"):
+                value = tool.get(key)
+                if isinstance(value, str):
+                    parts.append(value)
+    return " ".join(parts)
+
+
+def memory_text(memory):
+    return memory.get("action", "") + " " + memory.get("applicability", "")
+
+
 def _iso(epoch):
     return datetime.datetime.fromtimestamp(epoch, datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
@@ -285,6 +309,21 @@ def validate(fixture):
             problems.append("abstain case %s lists relevant evidence" % key)
         if case.get("worktree") and case["worktree"] not in projects.get(case.get("project"), {}).get("worktrees", {}):
             problems.append("case %s names unknown worktree" % key)
+        if "answer" in case:
+            answers = case["answer"]
+            if not isinstance(answers, list) or not answers:
+                problems.append("case %s answer must be a non-empty list" % key)
+            else:
+                evidence = [episode_text(episodes[ref]) for ref in case.get("relevant", []) if ref in episodes]
+                for group in case.get("required", []):
+                    evidence.extend(episode_text(episodes[ref]) for ref in group if ref in episodes)
+                evidence.extend(memory_text(memories[ref]) for ref in case.get("valid_memories", []) if ref in memories)
+                known = [normalize(text) for text in evidence]
+                for value in answers:
+                    if not isinstance(value, str) or not value.strip():
+                        problems.append("case %s answer entries must be non-empty strings" % key)
+                    elif not any(normalize(value) in text for text in known):
+                        problems.append("case %s answer %r not found in its evidence" % (key, value))
     return problems
 
 
@@ -374,6 +413,7 @@ def judge(case, results, session_map, groups) -> list[dict[str, Any]]:
             "leak": bool(support & forbidden),
             "stale": bool(set(result.get("memories", ())) & stale) and result["tier"] == "instruction" and result.get("status") == "verified",
             "group": next((groups[ref] for ref in support if ref in groups), None),
+            "text": result.get("text", ""),
         })
     return rows
 
@@ -391,6 +431,9 @@ def case_metrics(case, results, session_map, groups):
     first = next((index for index, row in enumerate(rows) if row["relevant"]), None)
     metrics["mrr"] = 1 / (first + 1) if first is not None else 0.0
     metrics["misleading_top3"] = sum(row["misleading"] and not row["relevant"] for row in top3)
+    if case.get("answer"):
+        returned = normalize(" ".join(row.get("text", "") for row in top5))
+        metrics["span5"] = int(any(normalize(answer) in returned for answer in case["answer"]))
     if case.get("required"):
         covered = sum(any(row["support"] & set(group) for row in top5) for group in case["required"])
         metrics["coverage"] = covered / len(case["required"])
@@ -428,11 +471,18 @@ def aggregate(per_case):
 def category_counts(per_case):
     counts = {}
     for case, metrics in per_case:
-        row = counts.setdefault(case["category"], {"hits": 0, "abstentions": 0})
+        row = counts.setdefault(case["category"], {"hits": 0, "abstentions": 0, "span_hits": 0, "span_labeled": 0})
         if case["expect"] == "match":
             row["hits"] += int(metrics.get("recall5") or 0)
+            if case.get("answer"):
+                row["span_labeled"] += 1
+                row["span_hits"] += int(metrics.get("span5") or 0)
         else:
             row["abstentions"] += int(metrics.get("abstain_correct") or 0)
+    for row in counts.values():
+        if not row["span_labeled"]:
+            del row["span_hits"]
+            del row["span_labeled"]
     return dict(sorted(counts.items()))
 
 
@@ -464,8 +514,9 @@ class LegacySystem:
                 matches.append((score, memory))
         out = []
         for _, memory in sorted(matches, key=lambda entry: -entry[0])[:3]:
+            text = memory["action"] + memory["applicability"]
             out.append({"sessions": self.memory_sessions(memory["finding"]), "tier": "instruction", "status": "verified",
-                        "memories": [self.world.memory_ids.get(memory["finding"])], "chars": len(memory["action"]) + len(memory["applicability"])})
+                        "memories": [self.world.memory_ids.get(memory["finding"])], "chars": len(text), "text": text})
         return out
 
     def memory_sessions(self, finding):
@@ -493,7 +544,8 @@ class RawFtsSystem:
             if row["session"] in seen:
                 continue
             seen.add(row["session"])
-            out.append({"sessions": [row["session"]], "tier": "lead", "chars": len(row["text"][:240]), "status": "unverified"})
+            text = row["text"][:240]
+            out.append({"sessions": [row["session"]], "tier": "lead", "chars": len(text), "text": text, "status": "unverified"})
         return out
 
 
@@ -511,10 +563,11 @@ class RecallSystem:
         response = self.learner.retrieve(project, case["query"], cwd=cwd, limit=limit, now=now, weak=self.weak)
         out = []
         for item in response["results"]:
+            text = json.dumps(item)
             out.append({
                 "sessions": [support["session"] for support in item["support"]], "tier": item["tier"], "status": item["status"],
                 "memories": [self.world.memory_ids.get(int(item["ref"].split(":")[1]))] if item["ref"].startswith("memory:") else [],
-                "score": None, "dup_group": None, "chars": len(json.dumps(item)),
+                "score": None, "dup_group": None, "chars": len(text), "text": text,
             })
         return out
 
@@ -793,6 +846,15 @@ def _differences(baseline, current):
                         regressions.append("%s %s %s: %s dropped %d -> %d" % (split, mode, category, metric, old_counts[metric], new_counts[metric]))
                     elif new_counts[metric] > old_counts[metric]:
                         improvements.append("%s %s %s: %s improved %d -> %d" % (split, mode, category, metric, old_counts[metric], new_counts[metric]))
+                if "span_hits" in old_counts:
+                    if "span_hits" not in new_counts:
+                        regressions.append("%s %s %s: span_hits disappeared" % (split, mode, category))
+                    elif new_counts["span_hits"] < old_counts["span_hits"]:
+                        regressions.append("%s %s %s: span_hits dropped %d -> %d" % (split, mode, category, old_counts["span_hits"], new_counts["span_hits"]))
+                    elif new_counts["span_hits"] > old_counts["span_hits"]:
+                        improvements.append("%s %s %s: span_hits improved %d -> %d" % (split, mode, category, old_counts["span_hits"], new_counts["span_hits"]))
+                if "span_labeled" in old_counts and "span_labeled" not in new_counts:
+                    regressions.append("%s %s %s: span_labeled disappeared" % (split, mode, category))
     return regressions, improvements
 
 

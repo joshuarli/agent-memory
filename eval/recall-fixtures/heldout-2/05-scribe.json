@@ -181,6 +181,9 @@
    ],
    "valid_memories": [
     "m-sc-index"
+   ],
+   "answer": [
+    "algorithm: :concurrently"
    ]
   },
   {
@@ -192,6 +195,9 @@
    "expect": "match",
    "relevant": [
     "sc-002"
+   ],
+   "answer": [
+    "MALLOC_ARENA_MAX=2"
    ]
   },
   {
@@ -203,6 +209,9 @@
    "expect": "match",
    "relevant": [
     "sc-003"
+   ],
+   "answer": [
+    "counter_cache"
    ]
   },
   {
@@ -214,6 +223,9 @@
    "expect": "match",
    "relevant": [
     "sc-003"
+   ],
+   "answer": [
+    "revisions_count"
    ]
   },
   {
@@ -225,6 +237,9 @@
    "expect": "match",
    "relevant": [
     "sc-004"
+   ],
+   "answer": [
+    "41 minutes"
    ]
   },
   {
@@ -236,6 +251,9 @@
    "expect": "match",
    "relevant": [
     "sc-005"
+   ],
+   "answer": [
+    "paper_trail 15"
    ]
   },
   {
@@ -247,6 +265,9 @@
    "expect": "match",
    "relevant": [
     "sc-002"
+   ],
+   "answer": [
+    "Use jemalloc and MALLOC_ARENA_MAX=2 first"
    ]
   },
   {

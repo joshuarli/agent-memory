@@ -193,6 +193,9 @@
    "expect": "match",
    "relevant": [
     "mc-001"
+   ],
+   "answer": [
+    "defer alloc.free(name)"
    ]
   },
   {
@@ -204,6 +207,9 @@
    "expect": "match",
    "relevant": [
     "mc-002"
+   ],
+   "answer": [
+    ".paths"
    ]
   },
   {
@@ -215,6 +221,9 @@
    "expect": "match",
    "relevant": [
     "mc-002"
+   ],
+   "answer": [
+    "latest tagged release"
    ]
   },
   {
@@ -229,6 +238,9 @@
    ],
    "valid_memories": [
     "m-mc-size"
+   ],
+   "answer": [
+    "ReleaseSmall"
    ]
   },
   {
@@ -240,6 +252,9 @@
    "expect": "match",
    "relevant": [
     "mc-004"
+   ],
+   "answer": [
+    "ZIG_GLOBAL_CACHE_DIR"
    ]
   },
   {
@@ -254,6 +269,9 @@
    ],
    "forbidden": [
     "ke-001"
+   ],
+   "answer": [
+    "512 bytes"
    ]
   },
   {
@@ -265,6 +283,9 @@
    "expect": "match",
    "relevant": [
     "mc-006"
+   ],
+   "answer": [
+    "x86_64-windows"
    ]
   },
   {
@@ -285,6 +306,10 @@
    "relevant": [
     "mc-001",
     "mc-005"
+   ],
+   "answer": [
+    "defer alloc.free(name)",
+    "512 bytes"
    ]
   },
   {
@@ -315,6 +340,9 @@
    "expect": "match",
    "relevant": [
     "mc-001"
+   ],
+   "answer": [
+    "defer alloc.free(name)"
    ]
   }
  ]

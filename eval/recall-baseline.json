@@ -356,23 +356,33 @@
       "categories": {
         "contradiction": {
           "abstentions": 0,
-          "hits": 1
+          "hits": 1,
+          "span_hits": 0,
+          "span_labeled": 3
         },
         "exact_identifier": {
           "abstentions": 0,
-          "hits": 5
+          "hits": 5,
+          "span_hits": 0,
+          "span_labeled": 7
         },
         "id_collision": {
           "abstentions": 0,
-          "hits": 1
+          "hits": 1,
+          "span_hits": 1,
+          "span_labeled": 1
         },
         "injection": {
           "abstentions": 0,
-          "hits": 2
+          "hits": 2,
+          "span_hits": 1,
+          "span_labeled": 3
         },
         "multi_record": {
           "abstentions": 0,
-          "hits": 0
+          "hits": 0,
+          "span_hits": 0,
+          "span_labeled": 2
         },
         "negative": {
           "abstentions": 21,
@@ -380,35 +390,51 @@
         },
         "paraphrase": {
           "abstentions": 0,
-          "hits": 1
+          "hits": 1,
+          "span_hits": 1,
+          "span_labeled": 29
         },
         "path_symbol_command": {
           "abstentions": 0,
-          "hits": 5
+          "hits": 5,
+          "span_hits": 1,
+          "span_labeled": 5
         },
         "short_identifier": {
           "abstentions": 0,
-          "hits": 4
+          "hits": 4,
+          "span_hits": 2,
+          "span_labeled": 4
         },
         "similar_project": {
           "abstentions": 0,
-          "hits": 3
+          "hits": 3,
+          "span_hits": 0,
+          "span_labeled": 3
         },
         "stale_source": {
           "abstentions": 0,
-          "hits": 1
+          "hits": 1,
+          "span_hits": 0,
+          "span_labeled": 3
         },
         "trajectory": {
           "abstentions": 0,
-          "hits": 0
+          "hits": 0,
+          "span_hits": 0,
+          "span_labeled": 9
         },
         "version": {
           "abstentions": 0,
-          "hits": 0
+          "hits": 0,
+          "span_hits": 0,
+          "span_labeled": 1
         },
         "worktree": {
           "abstentions": 0,
-          "hits": 1
+          "hits": 1,
+          "span_hits": 0,
+          "span_labeled": 1
         }
       },
       "leakage_violations": 0,
@@ -419,23 +445,33 @@
       "categories": {
         "contradiction": {
           "abstentions": 0,
-          "hits": 2
+          "hits": 2,
+          "span_hits": 1,
+          "span_labeled": 3
         },
         "exact_identifier": {
           "abstentions": 0,
-          "hits": 5
+          "hits": 5,
+          "span_hits": 0,
+          "span_labeled": 7
         },
         "id_collision": {
           "abstentions": 0,
-          "hits": 1
+          "hits": 1,
+          "span_hits": 1,
+          "span_labeled": 1
         },
         "injection": {
           "abstentions": 0,
-          "hits": 2
+          "hits": 2,
+          "span_hits": 1,
+          "span_labeled": 3
         },
         "multi_record": {
           "abstentions": 0,
-          "hits": 2
+          "hits": 2,
+          "span_hits": 0,
+          "span_labeled": 2
         },
         "negative": {
           "abstentions": 21,
@@ -443,35 +479,51 @@
         },
         "paraphrase": {
           "abstentions": 0,
-          "hits": 19
+          "hits": 19,
+          "span_hits": 11,
+          "span_labeled": 29
         },
         "path_symbol_command": {
           "abstentions": 0,
-          "hits": 5
+          "hits": 5,
+          "span_hits": 1,
+          "span_labeled": 5
         },
         "short_identifier": {
           "abstentions": 0,
-          "hits": 4
+          "hits": 4,
+          "span_hits": 2,
+          "span_labeled": 4
         },
         "similar_project": {
           "abstentions": 0,
-          "hits": 3
+          "hits": 3,
+          "span_hits": 0,
+          "span_labeled": 3
         },
         "stale_source": {
           "abstentions": 0,
-          "hits": 3
+          "hits": 3,
+          "span_hits": 0,
+          "span_labeled": 3
         },
         "trajectory": {
           "abstentions": 0,
-          "hits": 3
+          "hits": 3,
+          "span_hits": 3,
+          "span_labeled": 9
         },
         "version": {
           "abstentions": 0,
-          "hits": 1
+          "hits": 1,
+          "span_hits": 1,
+          "span_labeled": 1
         },
         "worktree": {
           "abstentions": 0,
-          "hits": 1
+          "hits": 1,
+          "span_hits": 0,
+          "span_labeled": 1
         }
       },
       "leakage_violations": 0,

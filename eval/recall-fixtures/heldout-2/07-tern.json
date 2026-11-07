@@ -181,6 +181,9 @@
    ],
    "valid_memories": [
     "m-tn-bouncer"
+   ],
+   "answer": [
+    "prepareThreshold=0"
    ]
   },
   {
@@ -192,6 +195,9 @@
    "expect": "match",
    "relevant": [
     "tn-002"
+   ],
+   "answer": [
+    "events_tenant_created_idx"
    ]
   },
   {
@@ -203,6 +209,9 @@
    "expect": "match",
    "relevant": [
     "tn-003"
+   ],
+   "answer": [
+    "analytics_slot"
    ]
   },
   {
@@ -214,6 +223,9 @@
    "expect": "match",
    "relevant": [
     "tn-004"
+   ],
+   "answer": [
+    "index fix was enough"
    ]
   },
   {
@@ -225,6 +237,9 @@
    "expect": "match",
    "relevant": [
     "tn-005"
+   ],
+   "answer": [
+    "daily_rollup_pk"
    ]
   },
   {
@@ -236,6 +251,9 @@
    "expect": "match",
    "relevant": [
     "tn-003"
+   ],
+   "answer": [
+    "118203311"
    ]
   },
   {
@@ -269,6 +287,9 @@
    "expect": "match",
    "relevant": [
     "tn-003"
+   ],
+   "answer": [
+    "stale replication slot"
    ]
   }
  ]
