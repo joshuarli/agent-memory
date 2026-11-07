@@ -3,10 +3,11 @@
 ## Status
 
 - **Goal:** keep the evidence model; make ordinary recall selective and measurably useful; bound local storage growth; measure all of it before anything is deleted.
-- **Landed:** MQ-1 `e82ee7b`, MQ-2 `d1d7d8c`, MQ-3 `b1768b5`, MQ-4 `9824582` (heldout-2 only), MQ-5 `5531380`, MQ-7 `4ce5f14`, MQ-12 `112275c`.
-- **In flight:** MQ-8, MQ-13.
+- **Landed:** MQ-1 `e82ee7b`, MQ-2 `d1d7d8c`, MQ-3 `b1768b5`, MQ-4 `9824582` (heldout-2), MQ-5 `5531380`, MQ-7 `4ce5f14`, MQ-8 `1aa959d`, MQ-10 `b1a053f`, MQ-12 `112275c`, MQ-13 `f8a3c19`, MQ-14 `128adf4`, MQ-15 `5b21b8f`.
+- **Applied to the owner's state (approved):** v12 migration and VACUUM (2.896 GB to 2.844 GB); `archive compact --apply` (archive 6.47 GB to 3.02 GB on disk, 0 corrupt, `archive verify` clean before and after).
+- **In flight:** MQ-9, MQ-4b.
 - **Ruling from the MQ-5 run (`gpt-6-luna`, `medium`, 5 per arm):** baseline 1/5, treatment 0/5 (never called `recall`), hook 3/5, oracle 5/5, controls clean. The hook always retrieved the right experience; the hook-oracle gap is how the line states the fix. MQ-14 targeted it; after MQ-14 the hook went 4/5 with 1/5 repeating the mistake (from 3/5 and 4/5).
-- **Next slice:** MQ-8, then MQ-13.
+- **Next slice:** MQ-11, tuned on `dev` once MQ-4b labels it, confirmed on `heldout-2`.
 - **Ruling from real data (2026-11-07, `archive status --json` on the owner's index):** database 2.9 GB (`events` 1.88 GB, FTS 630 MB, two identical 120 MB indexes on `events(session, position)`); archive 5.8 GB unique, of which older-generation-only bytes are 113 MB (2%). Compression (MQ-8) is the storage lever. Generation pruning in MQ-9 is worth little and drops to report-only.
 - **Ruling from MQ-4:** heldout-2 returns the answer text for 6 of 71 cases by default and 21 of 71 after one retry, against 24 and 51 session hits. MQ-11 targets span hits, not session hits.
 
@@ -57,6 +58,8 @@
 | MQ-12 | Hook lines may use the unused part of the 600-character budget and are cut at a word boundary. | `src/agent_memory/recall_hook.py`, `tests/test_recall.py` | none | Landed. The live-eval hook line carries the full fixed command. |
 | MQ-13 | Drop `events_session_position`, which duplicates the UNIQUE autoindex on `events(session, position)` (120 MB on the owner's index). | `src/agent_memory/store.py`, `tests/test_sessions.py` | none | `EXPLAIN QUERY PLAN` for the session/position lookups uses the autoindex; `tests/test_sessions.py` passes; a migrated copy of an existing database loses only that index. |
 | MQ-14 | Experience summaries lead with the resolution (the command, setting, or change that worked) before the failure narrative, so a hook line states the fix first. | `src/agent_memory/experience.py`, `tests/test_learning.py` | MQ-12 | Gate shows no hit, abstention, or span regression; the live-eval hook line begins with the fix. Re-run `--runs 5` only with owner approval. |
+| MQ-4b | Answer-span labels for `dev`, so MQ-11 can tune without reading `heldout-2`. | `eval/recall-fixtures/dev/`, `eval/recall-baseline.json` | MQ-4 | `validate` passes; gate passes after `--record`; hit and abstention counts unchanged. |
+| MQ-15 | `agent-sessions archive compact` converts existing plain objects to `.zlib`, verified before removal. | `src/agent_memory/archive.py`, `src/agent_memory/sessions_cli.py`, `tests/test_archive.py` | MQ-8 | Landed. |
 
 ### Simulated-clock scenarios (MQ-9)
 
