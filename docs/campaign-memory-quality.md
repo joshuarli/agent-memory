@@ -5,7 +5,7 @@
 - **Goal:** keep the evidence model; make ordinary recall selective and measurably useful; bound local storage growth; measure all of it before anything is deleted.
 - **Landed:** MQ-1 `e82ee7b`, MQ-2 `d1d7d8c`, MQ-3 `b1768b5`, MQ-4 `9824582` (heldout-2 only), MQ-5 `5531380`, MQ-7 `4ce5f14`, MQ-12 `112275c`.
 - **In flight:** MQ-8, MQ-13.
-- **Ruling from the MQ-5 run (`gpt-6-luna`, `medium`, 5 per arm):** baseline 1/5, treatment 0/5 (never called `recall`), hook 3/5, oracle 5/5, controls clean. The hook always retrieved the right experience; the hook-oracle gap is how the line states the fix. MQ-14 targets it.
+- **Ruling from the MQ-5 run (`gpt-6-luna`, `medium`, 5 per arm):** baseline 1/5, treatment 0/5 (never called `recall`), hook 3/5, oracle 5/5, controls clean. The hook always retrieved the right experience; the hook-oracle gap is how the line states the fix. MQ-14 targeted it; after MQ-14 the hook went 4/5 with 1/5 repeating the mistake (from 3/5 and 4/5).
 - **Next slice:** MQ-8, then MQ-13.
 - **Ruling from real data (2026-11-07, `archive status --json` on the owner's index):** database 2.9 GB (`events` 1.88 GB, FTS 630 MB, two identical 120 MB indexes on `events(session, position)`); archive 5.8 GB unique, of which older-generation-only bytes are 113 MB (2%). Compression (MQ-8) is the storage lever. Generation pruning in MQ-9 is worth little and drops to report-only.
 - **Ruling from MQ-4:** heldout-2 returns the answer text for 6 of 71 cases by default and 21 of 71 after one retry, against 24 and 51 session hits. MQ-11 targets span hits, not session hits.
