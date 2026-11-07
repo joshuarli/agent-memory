@@ -256,6 +256,34 @@ class FreshnessTests(RecallCase):
         hit = self.instruction(self.ask("alpha", "editable install orbit_core pytest clean runner"))[0]
         self.assertEqual((hit["tier"], hit["status"]), ("experience", "unverified"))
 
+    def experience(self, response):
+        return next(item for item in response["results"] if item["ref"].startswith("experience:"))
+
+    def captured_revision_spec(self, path, content):
+        files = dict(BASE["files"], **{"src/cache.py": "LIMIT = 10\n"})
+        turns = [
+            {"user": "make the export faster"},
+            tool("grep -rn cache src/", "src/cache.py:4:def cache_rows(rows):", 0),
+            {"assistant": "I will switch cache_rows to float32."},
+            {"user": "No, don't switch cache_rows to float32; the bottleneck is the per-row json.dumps call in src/cache.py, not the numeric type."},
+        ]
+        mutation = {"project": "alpha", "path": path, "content": content, "commit": True}
+        return fixture({"alpha": {"files": files}}, [episode("c-1", "alpha", turns, age=6)], mutations=[mutation])
+
+    def test_freshness_fallback_flags_only_the_files_the_memory_names(self):
+        self.build(self.captured_revision_spec("unrelated.txt", "irrelevant\n"))
+        row = self.store.db.execute("SELECT revision, validity FROM learning_experiences WHERE detector = 'user_correction'").fetchone()
+        self.assertTrue(row["revision"])
+        self.assertEqual(json.loads(row["validity"]), [])
+        hit = self.experience(self.ask("alpha", "cache_rows json.dumps bottleneck"))
+        self.assertNotEqual(hit["status"], "needs_revalidation")
+        self.assertNotIn("files_changed_since_capture", hit["reasons"])
+
+        self.build(self.captured_revision_spec("src/cache.py", "LIMIT = 20\ndef cache_rows(rows):\n    return rows[:LIMIT]\n"))
+        hit = self.experience(self.ask("alpha", "cache_rows json.dumps bottleneck"))
+        self.assertEqual(hit["status"], "needs_revalidation")
+        self.assertIn("files_changed_since_capture", hit["reasons"])
+
     def test_changed_or_deleted_transcript_marks_evidence_and_keeps_the_record(self):
         validity = [{"path": "src/app.py", "contains": "return 1"}]
         self.build(memory_spec(validity))

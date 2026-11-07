@@ -599,7 +599,7 @@ class Retriever:
             changed = _git_changed_since(self.cwd, candidate.revision)
             if changed:
                 named = {name for name in re.findall(r"[\w./-]+\.\w+", candidate.text)}
-                if any(path in changed or Path(path).name in {Path(name).name for name in named} for path in changed if named):
+                if named and any(path in named or Path(path).name in {Path(name).name for name in named} for path in changed):
                     status = "needs_revalidation"
                     reasons.append("files_changed_since_capture")
         for support in candidate.supports:
