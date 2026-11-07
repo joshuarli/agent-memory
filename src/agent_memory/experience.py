@@ -518,10 +518,16 @@ def add_experience(db, project, draft, session, now, worktree="", revision="", v
         existing = _near_duplicate(db, project, draft, identifiers)
     if existing is not None:
         before = db.execute("SELECT count(*) FROM learning_experience_sources WHERE experience = ?", (existing[0],)).fetchone()[0]
+        state = db.execute("SELECT state FROM learning_experiences WHERE id = ?", (existing[0],)).fetchone()[0]
+        sessions = {row[0] for row in db.execute("SELECT session FROM learning_experience_sources WHERE experience = ?", (existing[0],))}
         for item in sources:
             db.execute("INSERT OR IGNORE INTO learning_experience_sources(experience, session, position, digest, role) VALUES(?,?,?,?,?)",
                        (existing[0], item["session"], item["position"], item["digest"], item["role"]))
         grew = db.execute("SELECT count(*) FROM learning_experience_sources WHERE experience = ?", (existing[0],)).fetchone()[0] > before
+        fresh = list(dict.fromkeys(item["session"] for item in sources if item["session"] not in sessions))
+        if grew and fresh and state == "retired":
+            db.execute("UPDATE learning_experiences SET state = 'retained', state_reason = ?, state_at = ? WHERE id = ?",
+                       ("reobserved in session %s" % ", ".join(fresh), now, existing[0]))
         return ("merged" if grew else "duplicate"), existing[0]
     cursor = db.execute(
         "INSERT INTO learning_experiences(project, kind, claim, applies_when, identifiers, fingerprint, basis, detector, revision, worktree, "

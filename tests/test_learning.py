@@ -1136,6 +1136,53 @@ class LearningTest(unittest.TestCase):
         self.assertGreater(learning_sync.journal_head(self.store.db), forget_session_head)
         self.assert_journal_replays()
 
+    def reobserve_synthetic_experience(self, name, session, now):
+        draft = experience_module.Draft(
+            kind="method", claim="Synthetic experience %s keeps unique token zz%s." % (name, name),
+            applies_when="Synthetic mutation path.", detector="synthetic", subject=name,
+            observed_at=now, sources=[{"session": session, "position": 0, "digest": "r" * 64, "role": "trigger"}])
+        with self.store.db:
+            return experience_module.add_experience(
+                self.store.db, project_identity(self.repo), draft, session, now)
+
+    def test_reobserved_retired_experience_is_retained_again(self):
+        experience = self.add_synthetic_experience("reobserved")
+        self.assertGreater(experience_module.retire_stale(self.store.db, self.now + 1, days=0), 0)
+        self.assertEqual(self.store.db.execute(
+            "SELECT state FROM learning_experiences WHERE id = ?", (experience,)).fetchone()[0], "retired")
+        status, merged = self.reobserve_synthetic_experience("reobserved", "codex:reobserved-again", self.now + 2)
+        row = self.store.db.execute(
+            "SELECT state, state_reason, state_at FROM learning_experiences WHERE id = ?", (experience,)).fetchone()
+        self.assertEqual((status, merged), ("merged", experience))
+        self.assertEqual(row["state"], "retained")
+        self.assertIn("codex:reobserved-again", row["state_reason"])
+        self.assertEqual(row["state_at"], self.now + 2)
+
+    def test_reobserved_withdrawn_experience_stays_withdrawn(self):
+        experience = self.add_synthetic_experience("withdrawn-reobservable")
+        self.learn.withdraw("experience:%d" % experience, self.now)
+        status, merged = self.reobserve_synthetic_experience("withdrawn-reobservable", "codex:withdrawn-again", self.now + 2)
+        row = self.store.db.execute(
+            "SELECT state, state_reason, state_at FROM learning_experiences WHERE id = ?", (experience,)).fetchone()
+        self.assertEqual((status, merged), ("merged", experience))
+        self.assertEqual(row["state"], "withdrawn")
+        self.assertEqual(row["state_reason"], "withdrawn by user")
+        self.assertEqual(row["state_at"], self.now)
+
+    def test_reobserved_superseded_experience_stays_superseded(self):
+        experience = self.add_synthetic_experience("superseded-reobservable")
+        with self.store.db:
+            self.store.db.execute(
+                "UPDATE learning_experiences SET state = 'superseded', state_reason = 'superseded by experience 999', state_at = ? WHERE id = ?",
+                (self.now, experience))
+        status, merged = self.reobserve_synthetic_experience("superseded-reobservable", "codex:superseded-again", self.now + 2)
+        row = self.store.db.execute(
+            "SELECT state, state_reason, state_at FROM learning_experiences WHERE id = ?", (experience,)).fetchone()
+        self.assertEqual((status, merged), ("merged", experience))
+        self.assertEqual(row["state"], "superseded")
+        self.assertEqual(row["state_reason"], "superseded by experience 999")
+        self.assertEqual(row["state_at"], self.now)
+
     def test_rebuild_index_preserves_the_journal_and_its_triggers(self):
         self.add_synthetic_experience("rebuild")
         head = learning_sync.journal_head(self.store.db)
