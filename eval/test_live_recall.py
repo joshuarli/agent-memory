@@ -34,6 +34,14 @@ class MemoryUseEvaluationTests(unittest.TestCase):
         with mock.patch.object(EVAL, "live", side_effect=AssertionError("unexpected model request")), self.assertRaises(SystemExit):
             EVAL.main([])
 
+    def test_every_arm_runs_on_the_pinned_model_whatever_the_tier_table_says(self):
+        reviewer = mock.Mock()
+        reviewer._tier.return_value = ("gpt-6.1-sol", "high")
+        reviewer._runtime_environment.return_value = {}
+        with mock.patch.object(EVAL.LIVE, "_run_events", return_value={"status": "complete", "commands": []}) as run:
+            EVAL.run_arm("codex", reviewer, self.scratch(), "baseline", 0, Path("schema.json"))
+        self.assertEqual(run.call_args.args[5:7], ("gpt-6-luna", "medium"))
+
     def test_fixture_task_fails_without_the_lesson_and_passes_with_it(self):
         repo = self.scratch() / "repo"
         EVAL.write_repository(repo, None)

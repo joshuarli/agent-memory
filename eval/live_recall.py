@@ -36,6 +36,8 @@ from agent_memory import store as agent_session_store  # noqa: E402
 from agent_memory.recall_hook import prompt_context  # noqa: E402
 
 TMP_ROOT = REPOSITORY / ".work" / "tmp"
+MODEL = "gpt-6-luna"
+EFFORT = "medium"
 RUNS_PER_ARM = 3
 ARMS = ("baseline", "treatment", "hook", "control", "hook_control")
 CONTROL_ARMS = frozenset(("control", "hook_control"))
@@ -203,7 +205,7 @@ def verdict(summary, runs):
         "control_clean": clean("control"),
         "hook_control_clean": clean("hook_control"),
         "evidence_level": "smoke validation" if runs < 5 else "small measured sample",
-        "claim": "no causal or general claim; one task family, %d runs per arm, one model" % runs,
+        "claim": "no causal or general claim; one task family, %d runs per arm, %s at %s effort" % (runs, MODEL, EFFORT),
     }
 
 
@@ -218,9 +220,8 @@ def run_arm(codex, reviewer, scratch, arm, index, prompt_schema):
     prompt, injected = CONTROL_PROMPT if arm in CONTROL_ARMS else TASK_PROMPT, False
     if arm in HOOK_ARMS:
         prompt, injected = hook_prompt(repo, prompt)
-    model, effort = reviewer._tier("worker")
     started = time.time()
-    result = LIVE._run_events(codex, repo, prompt_schema, env, prompt, model, effort, sandbox="workspace-write")
+    result = LIVE._run_events(codex, repo, prompt_schema, env, prompt, MODEL, EFFORT, sandbox="workspace-write")
     result["elapsed_seconds"] = time.time() - started
     return run_metrics(arm, result, injected)
 
@@ -245,7 +246,7 @@ def live(runs):
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--live", action="store_true", help="make paid model calls: %d arms, --runs agent runs each" % len(ARMS))
+    parser.add_argument("--live", action="store_true", help="make paid Codex calls on %s at %s effort: %d arms, --runs agent runs each" % (MODEL, EFFORT, len(ARMS)))
     parser.add_argument("--runs", type=int, default=RUNS_PER_ARM)
     args = parser.parse_args(argv)
     if not args.live:

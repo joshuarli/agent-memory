@@ -5,7 +5,7 @@
 - **Goal:** keep the evidence model; make ordinary recall selective and measurably useful; bound local storage growth; measure all of it before anything is deleted.
 - **Base:** `c8845ee` on `master`. No slice accepted yet.
 - **Next slice:** MQ-1.
-- **Blocked on the owner:** the paid cmd run in MQ-5 and the location of the real-query corpus in MQ-6.
+- **Blocked on the owner:** the paid Codex run in MQ-5 and the location of the real-query corpus in MQ-6.
 
 ## Charter
 
@@ -21,8 +21,8 @@
 | --- | --- | --- |
 | The Cloudflare mirror stays offline (`agent-sessions mirror disable`). No Worker, D1, or R2 changes, and no `make check`, `worker-*`, or `perf-*` runs. | owner | Avoid Cloudflare spend. |
 | Local changes must still keep the mirror protocol valid, because the mirror can be re-enabled. Archive slices run `tests/test_mirror.py` and `tests/test_transfer.py`. | prescribed | Re-enabling must not need a migration of objects written while offline. |
-| Live evals run on Command Code: `cmd -p --model deepseek/deepseek-v4.1-flash --effort high`. | owner | Other agent usage is capped. |
-| Results from cmd runs are reported per model. They are not compared with the earlier Codex results. | prescribed | The model and harness both changed. |
+| Live evals run on Codex with `gpt-6-luna` at `medium` effort only, pinned as `MODEL` and `EFFORT` in `eval/live_recall.py`, never read from the `usr` tier table. | owner | Bound spend; a tier-table edit must not change what is billed. |
+| Results are reported for that model only. | prescribed | One model and one task family support no general claim. |
 | Retrieval eligibility, storage retention, and semantic forgetting stay separate operations. `forget-session` is never used for compaction. | prescribed | A retained memory can need old evidence, and stale advice can be useful as history. |
 | Presentation (hook or recall hit) never extends retention or raises authority. Only reconfirmation by new evidence reactivates an automatically retired record. | prescribed | Retrieval frequency is biased by the current paraphrase misses. |
 | This campaign deletes nothing. Retention runs as a planner that reports what it would retire, compress, or prune. | prescribed | Enforcement needs the simulation evidence from MQ-9 first. |
@@ -43,7 +43,7 @@
 | MQ-2 | A merge that adds a new supporting session to a `retired` record moves it back to `retained` with a state reason. `withdrawn` and `superseded` records stay put. | `src/agent_memory/experience.py`, `tests/test_learning.py` | none | `tests/test_learning.py`: each of the three states gets a case. |
 | MQ-3 | Recall quality gate: `bench_recall.py gate` compares per-category default and retry hit counts, abstention, forbidden project leakage, stale-as-current results, and serialized result bytes against a committed baseline. It exits nonzero on regression. | `eval/bench_recall.py`, `eval/recall-baseline.json`, `eval/test_bench_recall.py` (picked up by `make test-python`) | none | The gate passes at HEAD and fails on a fixture with one regression in each measure. |
 | MQ-4 | Span labels: fixtures name the fact or evidence span that answers each query. The judge requires the span to appear in the returned text, not only the right session. | `eval/recall-fixtures/`, `eval/bench_recall.py` | MQ-3 | The gate reports both measures. The baseline is re-recorded and any drop is stated in the commit body. |
-| MQ-5 | cmd runner for `eval/live_recall.py`: `--runner cmd` maps cmd's `--output-format json` stream to the command records `run_metrics` already scores. Adds an `oracle` arm that injects the correct memory, to separate retrieval failure from failure to use evidence. Each run uses `--no-session`, `--safe-mode`, and a per-run config home, so Command Code's taste learning and user skills cannot carry a lesson from one arm into another. | `eval/live_recall.py`, `eval/live_learning.py` (`_run_events` only), `eval/test_live_recall.py`, sanitized NDJSON fixture | none | `eval/test_live_recall.py` scores a recorded cmd stream offline, and the oracle arm appears in `summarize` and `verdict`. |
+| MQ-5 | Oracle arm for `eval/live_recall.py`: injects the correct memory, to separate retrieval failure from failure to use evidence. | `eval/live_recall.py`, `eval/test_live_recall.py` | none | `eval/test_live_recall.py`: the oracle prompt carries the lesson, and the arm appears in `summarize` and `verdict`. |
 | MQ-6 | Real-query corpus: 50 to 100 reviewed queries from real sessions, each frozen to its corpus cutoff and repository revision, covering exact identifiers, paraphrases, decisions, multi-session problems, obsolete workarounds, and no-answer cases. | harness in `eval/`; data location per owner | MQ-4 | `bench_recall.py gate --corpus <path>` reports per-category results on the owner's machine. |
 | MQ-7 | Storage breakdown in `agent-sessions archive status --json` and `doctor --json`: database and WAL bytes, bytes per table and index (through `dbstat` when the SQLite build has it, otherwise reported as unavailable), unique archive bytes, current versus older generations, bytes pinned by retained experiences, and unreferenced bytes. | `src/agent_memory/archive.py`, `src/agent_memory/store.py` (read-only queries), `tests/test_archive.py` | none | `tests/test_archive.py`: the synthetic 30-append workload reports the older-generation and pinned bytes that a hand count gives. |
 | MQ-8 | Compressed local archive objects: an explicit per-object encoding, digests over the original bytes, and per-chunk compression that keeps bounded reads. Old uncompressed objects stay readable. Mirror upload sends the same plaintext as before. | `src/agent_memory/archive.py`, `tests/test_archive.py`, `tests/test_mirror.py` | MQ-7 | Mixed-encoding round trip; `tests/test_mirror.py` and `tests/test_transfer.py` pass unchanged; compression ratio, inspect latency, and peak memory are measured on real transcripts and stated in the commit body. |
@@ -57,7 +57,7 @@ Temporary task state ages out of ordinary recall. A rare durable constraint with
 
 ## Needs environment
 
-- **MQ-5 paid run** (owner approval and cmd credits): `eval/live_recall.py --live --runner cmd --runs 1` (six runs) to validate the runner, then `--runs 5` (30 runs). Record the verdict in `README.md` for one model and one task family. This closes AGM-4.
+- **MQ-5 paid run** (owner approval; Codex, `gpt-6-luna` at `medium`): `eval/live_recall.py --live --runs 1` (six runs, one per arm) to check token usage, then `--runs 5` (30 runs). Record the verdict in `README.md` for one model and one task family. This closes AGM-4.
 - **Remote `memory_search` quality:** needs the mirror back online. Deferred.
 - **Pi automatic surfacing:** check whether `usr`'s Pi adapter calls the prompt hook. Read-only in `usr`. Related to AGM-7.
 
@@ -65,5 +65,5 @@ Temporary task state ages out of ordinary recall. A rare durable constraint with
 
 - **Allowed:** local code, tests, fixtures, and docs in this repo; offline evals; local commits.
 - **Forbidden:** production writes; Worker changes; deleting stored data; paid runs without approval; editing `usr`.
-- **Not in scope:** embeddings or any model in retrieval; FTS `detail=` changes; replacing SQLite or the JSON encodings; enforced pruning; indexing Command Code transcripts.
+- **Not in scope:** embeddings or any model in retrieval; FTS `detail=` changes; replacing SQLite or the JSON encodings; enforced pruning.
 - **Contract changes for the owner:** MQ-2 adds a `retired` to `retained` state transition. MQ-7 adds fields to `archive status` and `doctor` JSON. MQ-8 changes the on-disk object format and needs a reader for both encodings. MQ-9 adds an `archive plan` command. MQ-10 changes what the prompt hook can surface.
