@@ -23,13 +23,17 @@ from agent_memory.learning_ops import SchedulerError
 from agent_memory import learning_sync
 from agent_memory.recall import DEFAULT_LIMIT, Retriever, SourceError, artifact_text as read_tracked_text
 from agent_memory.store import Store, StoreError, active_branch, default_state_dir, project_identity, redact
+from agent_memory.transcripts import canonical_harness, qualified_id
 from agent_memory.types import HARNESSES, FindingState, Harness, RecallSource, RetryKind, Signal
 
 
 SCHEMA_VERSION = 4
 HOOK_PAYLOAD_BYTES = 1 << 20
 HOOK_PROMPT_ANCHOR_CHARS = 40
-HOOK_TRACE_IDLE_SECONDS = 3600
+SESSION_TRACE_IDLE_SECONDS = 3600
+RECALL_CALL_WINDOW_SECONDS = 120
+SESSION_ENVIRONMENT: dict[Harness, str] = {"claude": "CLAUDE_CODE_SESSION_ID"}
+SESSION_HELP = "calling session, recorded on the receipt (default: the harness's session variable, e.g. CLAUDE_CODE_SESSION_ID)"
 MAX_EVENTS = 2000
 MAX_REVIEWS = 2
 MAX_MODEL_CALLS_PER_DAY = 24
@@ -83,6 +87,19 @@ def insert_receipts(db, project, cwd, query, results, now, session, source: Reca
     for rank, item in enumerate(results):
         db.execute("INSERT INTO learning_receipts(project,cwd,query,created_at,record,tier,status,rank,event,session,source) VALUES(?,?,?,?,?,?,?,?,'returned',?,?)",
                    (project, str(cwd) if cwd else None, text, now, item["ref"], item["tier"], item["status"], rank, session, source))
+
+
+def calling_session(explicit: str | None, environ: collections.abc.Mapping[str, str]) -> str | None:
+    if explicit is not None:
+        harness, separator, native = explicit.partition(":")
+        if not separator or not native:
+            raise LearningError("--session takes HARNESS:ID, for example claude:6f1c2a94-...")
+        return qualified_id(canonical_harness(harness), native)
+    for harness, variable in SESSION_ENVIRONMENT.items():
+        native = environ.get(variable)
+        if native:
+            return qualified_id(harness, native)
+    return None
 
 
 def captures(db, project) -> bool:
@@ -1611,10 +1628,10 @@ class Learner:
     def trace_outcomes(self, now, limit=50):
         written = 0
         receipts = self.db.execute("""SELECT * FROM learning_receipts r WHERE event='returned' AND created_at<=? AND created_at>=?
-            AND (r.source='agent' OR EXISTS (SELECT 1 FROM sessions s WHERE s.id=r.session AND s.updated<=?))
+            AND (r.session IS NULL OR EXISTS (SELECT 1 FROM sessions s WHERE s.id=r.session AND s.updated<=?))
             AND NOT EXISTS (SELECT 1 FROM learning_outcomes o WHERE o.record=r.record AND o.project=r.project AND o.computed_at>=r.created_at
-                            AND (r.source='agent' OR o.session=r.session))
-            ORDER BY created_at LIMIT ?""", (now, now - 14 * 86400, now - HOOK_TRACE_IDLE_SECONDS, limit)).fetchall()
+                            AND (r.session IS NULL OR o.session=r.session))
+            ORDER BY created_at LIMIT ?""", (now, now - 14 * 86400, now - SESSION_TRACE_IDLE_SECONDS, limit)).fetchall()
         for receipt in receipts:
             located = self._receipt_session(receipt)
             if located is None:
@@ -1637,14 +1654,29 @@ class Learner:
                 if event["kind"] == "user" and redact(" ".join(event["text"].split())).startswith(prompt):
                     return receipt["session"], events, index
             return None
+        if receipt["session"]:
+            sessions = [receipt["session"], *(row[0] for row in self.db.execute("SELECT id FROM sessions WHERE parent=? ORDER BY updated", (receipt["session"],)))]
+            calls = [(abs(stamp - receipt["created_at"]), session, events, index) for session in sessions
+                     for events in [self._events(session)[0]] for index, stamp in self._recall_calls(events)
+                     if abs(stamp - receipt["created_at"]) <= RECALL_CALL_WINDOW_SECONDS]
+            if not calls:
+                return None
+            _, session, events, index = min(calls, key=lambda call: call[0])
+            return session, events, index
         for row in self.db.execute("SELECT id FROM sessions WHERE project=? AND updated>=? ORDER BY updated LIMIT 40", (receipt["project"], receipt["created_at"] - 3600)):
             events, _ = self._events(row["id"])
-            for index, event in enumerate(events):
-                if event["kind"] == "tool-call" and "agent-learn" in event["text"] and "recall" in event["text"]:
-                    stamp = _epoch(event["timestamp"])
-                    if stamp is not None and abs(stamp - receipt["created_at"]) <= 120:
-                        return row["id"], events, index
+            for index, stamp in self._recall_calls(events):
+                if abs(stamp - receipt["created_at"]) <= RECALL_CALL_WINDOW_SECONDS:
+                    return row["id"], events, index
         return None
+
+    @staticmethod
+    def _recall_calls(events):
+        for index, event in enumerate(events):
+            if event["kind"] == "tool-call" and "agent-learn" in event["text"] and "recall" in event["text"]:
+                stamp = _epoch(event["timestamp"])
+                if stamp is not None:
+                    yield index, stamp
 
     def _follow_through(self, receipt, session, events, index):
         ref = receipt["record"]
@@ -1771,9 +1803,11 @@ def parser():
     recall.add_argument("--no-refresh", action="store_true", help="search the existing local index without scanning transcripts")
     recall.add_argument("--no-record", action="store_true", help="do not write a retrieval receipt")
     recall.add_argument("--weak", action="store_true", help="after an abstention, also list low-confidence leads; every result is a lead and none is an instruction")
+    recall.add_argument("--session", metavar="HARNESS:ID", help=SESSION_HELP)
     inspect_command = commands.add_parser("inspect", help="show source-verified evidence behind a recall result")
     inspect_command.add_argument("ref", help="memory:N, experience:N or event:SESSION@POSITION")
     inspect_command.add_argument("--project", type=Path, default=Path.cwd(), help="project the ref belongs to (default: current directory's project)")
+    inspect_command.add_argument("--session", metavar="HARNESS:ID", help=SESSION_HELP)
     observe = commands.add_parser("observe", help="capture experience locally without model review")
     observe.add_argument("--project", type=Path, default=Path.cwd(), help="project to observe (default: current directory's project)")
     observe.add_argument("--off", action="store_true", help="stop local observation of the project; keeps captured experience")
@@ -1886,7 +1920,8 @@ def main(argv=None):
             identity = project_identity(args.project)
             if not args.no_refresh:
                 store.refresh(project=identity)
-            response = learner.retrieve(identity, args.query, cwd=args.project, limit=args.limit, explain=args.explain, verify=not args.no_verify, record=not args.no_record, weak=args.weak)
+            response = learner.retrieve(identity, args.query, cwd=args.project, limit=args.limit, explain=args.explain, verify=not args.no_verify, record=not args.no_record, weak=args.weak,
+                                         session=calling_session(args.session, os.environ))
             print(redacted_json(response, indent=2) if args.explain else redacted_json(response["results"], separators=(",", ":")))
             if response["abstained"]:
                 vocabulary = response.get("vocabulary")
@@ -1894,7 +1929,7 @@ def main(argv=None):
                 hint = response.get("hint")
                 print("agent-learn recall: " + (hint if isinstance(hint, str) else "") + (" Terms seen in this project: " + terms + "." if terms else ""), file=sys.stderr)
         elif args.command == "inspect":
-            print(redacted_json(learner.inspect(args.ref, cwd=args.project), indent=2))
+            print(redacted_json(learner.inspect(args.ref, cwd=args.project, session=calling_session(args.session, os.environ)), indent=2))
         elif args.command == "observe":
             if args.off:
                 learner.observe_disable(args.project)

@@ -1032,6 +1032,22 @@ class CommandTests(CliCase):
         self.assertEqual(status["findings"], {})
         self.assertEqual(status["retrieval"]["returned"], 2 if len(hits) == 2 else status["retrieval"]["returned"])
 
+    def test_recall_and_inspect_record_the_calling_session(self):
+        self.prepare_cli(lesson_world())
+        project = str(self.world.projects["alpha"]["path"])
+        self.run_cli("observe", "--project", project, "--run")
+        hits = json.loads(self.run_cli("recall", "ModuleNotFoundError orbit_core", "--project", project, "--session", "codex:rollout-9").stdout)
+        self.env["CLAUDE_CODE_SESSION_ID"] = "6f1c2a94"
+        self.run_cli("inspect", hits[0]["ref"], "--project", project)
+        self.run_cli("recall", "websocket reconnect backoff", "--project", project)
+        rejected = self.run_cli("recall", "orbit_core", "--project", project, "--session", "nonsense:1", check=False)
+        self.assertEqual(rejected.returncode, 1)
+        self.assertIn("unsupported harness", rejected.stderr)
+        store = agent_session_store.Store(self.state)
+        self.addCleanup(store.close)
+        sessions = {row[0]: row[1] for row in store.db.execute("SELECT DISTINCT event, session FROM learning_receipts")}
+        self.assertEqual(sessions, {"returned": "rollout-9", "inspected": "claude:6f1c2a94", "abstained": "claude:6f1c2a94"})
+
     def test_abstention_prints_guidance_on_stderr_and_an_empty_list(self):
         self.prepare_cli(lesson_world())
         project = str(self.world.projects["alpha"]["path"])
@@ -1306,6 +1322,36 @@ class OutcomeTests(RecallCase):
         self.learner.trace_outcomes(self.world.now)
         traced = [row[0] for row in self.store.db.execute("SELECT session FROM learning_outcomes ORDER BY session")]
         self.assertEqual(traced, sorted(session for session, _ in sessions))
+
+    def test_concurrent_agent_recalls_are_attributed_to_their_own_sessions(self):
+        self.build(lesson_world())
+        query = "ModuleNotFoundError orbit_core"
+        ref = self.ask("alpha", query)["results"][0]["ref"]
+        start = self.world.now - 3 * 86400
+        recall = tool("agent-learn recall '%s' --project /repo" % query, '[{"ref": "%s"}]' % ref, 0)
+        sessions = {}
+        for key, result in (("p-1", tool("pytest -q tests/test_ingest.py", "1 passed in 0.4s", 0)), ("p-2", tool("pytest -q tests/test_ingest.py", PYTEST_FAIL, 1))):
+            spec = episode(key, "alpha", [{"user": "tests fail on the runner again"}, recall, result], age=3)
+            BENCH.write_episode(self.world.roots, spec, self.world.cwd("alpha"), start)
+            sessions[key] = BENCH.qualified("codex", BENCH.native(spec))
+        self.store.refresh(roots=self.world.root_args())
+        for key in ("p-2", "p-1"):
+            self.learner.record_receipts(self.ident["alpha"], self.world.cwd("alpha"), query, {"results": [{"ref": ref, "tier": "experience", "status": "unverified"}]},
+                                         start + 61, sessions[key], "agent")
+        self.assertEqual(self.learner.trace_outcomes(self.world.now), 2)
+        traced = {row[0]: row[1] for row in self.store.db.execute("SELECT session, verification FROM learning_outcomes")}
+        self.assertEqual(traced, {sessions["p-1"]: "passed", sessions["p-2"]: "failed"})
+
+    def test_stored_session_without_a_matching_recall_call_stays_unknown(self):
+        self.build(lesson_world())
+        ref = self.ask("alpha", "ModuleNotFoundError orbit_core")["results"][0]["ref"]
+        start = self.world.now - 3 * 86400
+        spec = episode("q-1", "alpha", [{"user": "tests fail on the runner again"}, tool("pytest -q tests/test_ingest.py", "1 passed in 0.4s", 0)], age=3)
+        BENCH.write_episode(self.world.roots, spec, self.world.cwd("alpha"), start)
+        self.store.refresh(roots=self.world.root_args())
+        self.learner.record_receipts(self.ident["alpha"], self.world.cwd("alpha"), "q", {"results": [{"ref": ref, "tier": "experience", "status": "unverified"}]},
+                                     start + 61, BENCH.qualified("codex", BENCH.native(spec)), "agent")
+        self.assertEqual(self.learner.trace_outcomes(self.world.now), 0)
 
     def test_unlocatable_session_stays_unknown_rather_than_guessed(self):
         self.build(lesson_world())
