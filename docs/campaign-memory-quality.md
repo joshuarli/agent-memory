@@ -3,11 +3,11 @@
 ## Status
 
 - **Goal:** keep the evidence model; make ordinary recall selective and measurably useful; bound local storage growth; measure all of it before anything is deleted.
-- **Base:** `c8845ee` on `master`. No slice accepted yet.
-- **Next slice:** MQ-1.
-- **In flight:** MQ-3, MQ-5.
-- **Landed:** MQ-1 (`e82ee7b`), MQ-2 (`d1d7d8c`).
-- **Approved:** the paid Codex run in MQ-5 (`--runs 1`, then `--runs 5`).
+- **Landed:** MQ-1 `e82ee7b`, MQ-2 `d1d7d8c`, MQ-3 `b1768b5`, MQ-4 `9824582` (heldout-2 only), MQ-5 `5531380`, MQ-7 `4ce5f14`, MQ-12 `112275c`.
+- **In flight:** the MQ-5 paid run, `--runs 5` on the fixed hook.
+- **Next slice:** MQ-8, then MQ-13.
+- **Ruling from real data (2026-11-07, `archive status --json` on the owner's index):** database 2.9 GB (`events` 1.88 GB, FTS 630 MB, two identical 120 MB indexes on `events(session, position)`); archive 5.8 GB unique, of which older-generation-only bytes are 113 MB (2%). Compression (MQ-8) is the storage lever. Generation pruning in MQ-9 is worth little and drops to report-only.
+- **Ruling from MQ-4:** heldout-2 returns the answer text for 6 of 71 cases by default and 21 of 71 after one retry, against 24 and 51 session hits. MQ-11 targets span hits, not session hits.
 
 ## Charter
 
@@ -52,7 +52,9 @@
 | MQ-8 | Compressed local archive objects: an explicit per-object encoding, digests over the original bytes, and per-chunk compression that keeps bounded reads. Old uncompressed objects stay readable. Mirror upload sends the same plaintext as before. | `src/agent_memory/archive.py`, `tests/test_archive.py`, `tests/test_mirror.py` | MQ-7 | Mixed-encoding round trip; `tests/test_mirror.py` and `tests/test_transfer.py` pass unchanged; compression ratio, inspect latency, and peak memory are measured on real transcripts and stated in the commit body. |
 | MQ-9 | Retention planner, simulation only: `agent-sessions archive plan --json` lists generations and objects it would prune (keep the latest generation per session, generations retained evidence needs, and a bounded sample of the rest), plus experiences it would retire. A simulated-clock suite runs a year of lifecycle events. | new planner module, `tests/test_retention.py` | MQ-2, MQ-7 | The simulated-clock suite covers each scenario below and checks that the inspected evidence of every retained memory survives the plan. |
 | MQ-10 | Transcript fallback eligibility: events that only support `withdrawn` or `superseded` experiences are excluded from the prompt hook. Explicit `recall` still returns them, labeled historical. | `src/agent_memory/recall.py`, `src/agent_memory/recall_hook.py`, `tests/test_recall.py` | MQ-1 | A withdrawn lesson's source event does not reach the hook and does come back as historical from `recall`. |
-| MQ-11 | Paraphrase retrieval without models: improve default hits on paraphrase and trajectory queries. Candidate methods are project-vocabulary expansion from experience identifiers and claim/applies-when weighting. | `src/agent_memory/recall.py` | MQ-3, MQ-4 | The gate shows a paraphrase gain on `heldout-2`, no abstention or leakage regression, and no loss on MQ-6. The baseline is raised in the same commit. |
+| MQ-11 | Retrieval without models: improve default span hits, and session hits on paraphrase and trajectory queries. Candidate methods are project-vocabulary expansion from experience identifiers and claim/applies-when weighting. | `src/agent_memory/recall.py` | MQ-3, MQ-4 | The gate shows a paraphrase gain on `heldout-2`, no abstention or leakage regression, and no loss on MQ-6. The baseline is raised in the same commit. |
+| MQ-12 | Hook lines may use the unused part of the 600-character budget and are cut at a word boundary. | `src/agent_memory/recall_hook.py`, `tests/test_recall.py` | none | Landed. The live-eval hook line carries the full fixed command. |
+| MQ-13 | Drop `events_session_position`, which duplicates the UNIQUE autoindex on `events(session, position)` (120 MB on the owner's index). | `src/agent_memory/store.py`, `tests/test_sessions.py` | none | `EXPLAIN QUERY PLAN` for the session/position lookups uses the autoindex; `tests/test_sessions.py` passes; a migrated copy of an existing database loses only that index. |
 
 ### Simulated-clock scenarios (MQ-9)
 
@@ -69,4 +71,4 @@ Temporary task state ages out of ordinary recall. A rare durable constraint with
 - **Allowed:** local code, tests, fixtures, and docs in this repo; offline evals; local commits.
 - **Forbidden:** production writes; Worker changes; deleting stored data; paid runs without approval; editing `usr`.
 - **Not in scope:** embeddings or any model in retrieval; FTS `detail=` changes; replacing SQLite or the JSON encodings; enforced pruning.
-- **Contract changes for the owner:** MQ-2 adds a `retired` to `retained` state transition. MQ-7 adds fields to `archive status` and `doctor` JSON. MQ-8 changes the on-disk object format and needs a reader for both encodings. MQ-9 adds an `archive plan` command. MQ-10 changes what the prompt hook can surface.
+- **Contract changes for the owner:** MQ-2 adds a `retired` to `retained` state transition. MQ-7 adds fields to `archive status` and `doctor` JSON. MQ-8 changes the on-disk object format and needs a reader for both encodings. MQ-9 adds an `archive plan` command. MQ-10 changes what the prompt hook can surface. MQ-12 changed hook line lengths. MQ-13 drops an index from existing databases.
