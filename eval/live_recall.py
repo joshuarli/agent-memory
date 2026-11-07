@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Opt-in memory-use evaluation: baseline, retrieved-memory treatment, and unrelated-task control against native Codex runs."""
+"""Opt-in memory-use evaluation against native Codex runs: baseline, retrieved-memory treatment, the prompt hook's injection, and unrelated-task controls."""
 import argparse
 import importlib.util
 import json
@@ -11,6 +11,7 @@ import subprocess
 import sys
 import tempfile
 import time
+import uuid
 from pathlib import Path
 
 REPOSITORY = Path(__file__).resolve().parents[1]
@@ -32,10 +33,13 @@ BENCH_SPEC.loader.exec_module(BENCH)
 
 from agent_memory import learning as agent_learning  # noqa: E402
 from agent_memory import store as agent_session_store  # noqa: E402
+from agent_memory.recall_hook import prompt_context  # noqa: E402
 
 TMP_ROOT = REPOSITORY / ".work" / "tmp"
 RUNS_PER_ARM = 3
-ARMS = ("baseline", "treatment", "control")
+ARMS = ("baseline", "treatment", "hook", "control", "hook_control")
+CONTROL_ARMS = frozenset(("control", "hook_control"))
+HOOK_ARMS = frozenset(("hook", "hook_control"))
 TASK_PROMPT = (
     "The cache test suite was reported as OOM-killed on CI. Find out whether the cache tests pass here, using tools/run_cache_tests.py. "
     "Do not modify repository files. Report the outcome."
@@ -101,7 +105,7 @@ def install_memory(repo):
     store = agent_session_store.Store(state)
     learner = agent_learning.Learner(store, None)
     store.refresh(roots={"codex": [roots]})
-    identity = agent_session_store.project_identity(repo)
+    identity = learner.observe_enable(repo, time.time())
     totals = learner.observe_project(identity, repo, time.time(), 0)
     store.close()
     return totals
@@ -120,11 +124,17 @@ def write_shim(repo):
     return shim_dir
 
 
+def hook_prompt(repo, prompt):
+    payload = {"hook_event_name": "UserPromptSubmit", "prompt": prompt, "cwd": str(repo), "session_id": str(uuid.uuid4())}
+    context = prompt_context(repo / ".agent/state", payload, "codex")
+    return (context + "\n\n" + prompt if context else prompt), context is not None
+
+
 def executes(command, script):
     return re.search(r"(?:^|[\s;&|'\"(])(?:\S+=\S+\s+)*python3?\s[^;&|]*?" + re.escape(script), command) is not None
 
 
-def run_metrics(arm, run):
+def run_metrics(arm, run, injected=False):
     commands = run.get("commands", [])
     suite = [record for record in commands if executes(record["command"], "tools/run_cache_tests.py")]
     unset = [record for record in suite if record["exit_code"] == 137]
@@ -134,14 +144,15 @@ def run_metrics(arm, run):
     lesson_used = any(LESSON_ENV + "=" in record["command"] for record in suite) or any(LESSON_ENV in record["command"] for record in commands if record not in recalled)
     return {
         "run_status": run.get("status"),
-        "completed_correctly": passed if arm != "control" else not suite,
+        "completed_correctly": passed if arm not in CONTROL_ARMS else not suite,
         "repeated_mistake_ran_without_lesson": bool(unset),
         "attempts_at_suite": len(suite),
         "tool_calls": len(commands),
         "recall_invoked": bool(recalled),
         "inspect_invoked": bool(inspected),
         "lesson_applied": lesson_used and any(record["exit_code"] == 0 for record in suite),
-        "unwanted_memory_effect": arm == "control" and (bool(recalled) or lesson_used or bool(suite)),
+        "hook_injected": injected,
+        "unwanted_memory_effect": arm in CONTROL_ARMS and (bool(recalled) or lesson_used or bool(suite)),
         "usage": run.get("usage", {}),
         "elapsed_seconds": run.get("elapsed_seconds"),
     }
@@ -165,6 +176,7 @@ def summarize(per_run):
             "completed_correctly": rate("completed_correctly"),
             "repeated_mistake": rate("repeated_mistake_ran_without_lesson"),
             "recall_invoked": rate("recall_invoked"),
+            "hook_injected": rate("hook_injected"),
             "lesson_applied": rate("lesson_applied"),
             "unwanted_memory_effect": rate("unwanted_memory_effect"),
             "mean_tool_calls": sum(row["tool_calls"] for row in rows) / len(rows),
@@ -178,13 +190,18 @@ def summarize(per_run):
 def verdict(summary, runs):
     if any(summary[arm]["complete_runs"] == 0 for arm in ARMS):
         return {"status": "incomplete", "evidence_level": "none"}
-    base, treated, control = summary["baseline"], summary["treatment"], summary["control"]
-    improved = treated["repeated_mistake"] < base["repeated_mistake"] and treated["completed_correctly"] >= base["completed_correctly"]
-    clean_control = control["unwanted_memory_effect"] == 0 and control["completed_correctly"] == 1
+    def better(arm, than):
+        return summary[arm]["repeated_mistake"] < summary[than]["repeated_mistake"] and summary[arm]["completed_correctly"] >= summary[than]["completed_correctly"]
+
+    def clean(arm):
+        return summary[arm]["unwanted_memory_effect"] == 0 and summary[arm]["completed_correctly"] == 1
+
     return {
         "status": "evaluated",
-        "treatment_better_than_baseline": improved,
-        "control_clean": clean_control,
+        "treatment_better_than_baseline": better("treatment", "baseline"),
+        "hook_better_than_treatment": better("hook", "treatment"),
+        "control_clean": clean("control"),
+        "hook_control_clean": clean("hook_control"),
         "evidence_level": "smoke validation" if runs < 5 else "small measured sample",
         "claim": "no causal or general claim; one task family, %d runs per arm, one model" % runs,
     }
@@ -198,12 +215,14 @@ def run_arm(codex, reviewer, scratch, arm, index, prompt_schema):
     shim_dir = write_shim(repo)
     env = reviewer._runtime_environment(scratch, {"PATH": str(shim_dir) + os.pathsep + os.environ.get("PATH", os.defpath)})
     env.pop("AGENT_LEARN_WORKER", None)
-    prompt = CONTROL_PROMPT if arm == "control" else TASK_PROMPT
+    prompt, injected = CONTROL_PROMPT if arm in CONTROL_ARMS else TASK_PROMPT, False
+    if arm in HOOK_ARMS:
+        prompt, injected = hook_prompt(repo, prompt)
     model, effort = reviewer._tier("worker")
     started = time.time()
     result = LIVE._run_events(codex, repo, prompt_schema, env, prompt, model, effort, sandbox="workspace-write")
     result["elapsed_seconds"] = time.time() - started
-    return run_metrics(arm, result)
+    return run_metrics(arm, result, injected)
 
 
 def live(runs):
@@ -226,7 +245,7 @@ def live(runs):
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--live", action="store_true", help="make paid model calls: three arms, --runs agent runs each")
+    parser.add_argument("--live", action="store_true", help="make paid model calls: %d arms, --runs agent runs each" % len(ARMS))
     parser.add_argument("--runs", type=int, default=RUNS_PER_ARM)
     args = parser.parse_args(argv)
     if not args.live:

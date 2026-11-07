@@ -15,6 +15,8 @@ EVAL = importlib.util.module_from_spec(SPEC)
 assert SPEC.loader is not None
 SPEC.loader.exec_module(EVAL)
 
+from agent_memory.recall_hook import HEADER  # noqa: E402
+
 
 def command(text, code=0, output=""):
     return {"command": text, "exit_code": code, "output": output}
@@ -60,6 +62,16 @@ class MemoryUseEvaluationTests(unittest.TestCase):
         hits = json.loads(result.stdout)
         self.assertTrue(hits and "TIDEPOOL_SHARDS" in json.dumps(hits[0]), hits)
 
+    def test_hook_arms_carry_exactly_what_the_prompt_hook_injects(self):
+        repo = self.scratch() / "repo"
+        EVAL.write_repository(repo, EVAL.recall_guidance(EVAL.testkit.USR_TARGET))
+        EVAL.install_memory(repo)
+        task, injected = EVAL.hook_prompt(repo, EVAL.TASK_PROMPT)
+        self.assertTrue(injected)
+        self.assertTrue(task.startswith(HEADER) and task.endswith(EVAL.TASK_PROMPT), task)
+        self.assertIn(EVAL.LESSON_ENV, task)
+        self.assertEqual(EVAL.hook_prompt(repo, EVAL.CONTROL_PROMPT), (EVAL.CONTROL_PROMPT, False))
+
     def test_recalling_is_not_applying_and_reading_is_not_running(self):
         recall = command("agent-learn recall 'cache TIDEPOOL_SHARDS'", 0, "TIDEPOOL_SHARDS")
         read = command("cat tools/run_cache_tests.py", 0, "OOM_KILLED")
@@ -78,24 +90,29 @@ class MemoryUseEvaluationTests(unittest.TestCase):
     def test_control_flags_unneeded_memory_use(self):
         quiet = EVAL.run_metrics("control", {"status": "complete", "commands": [command("cat VERSION", 0, "3.7.2")]})
         noisy = EVAL.run_metrics("control", {"status": "complete", "commands": [command("agent-learn recall version"), command("cat VERSION", 0, "3.7.2")]})
+        hooked = EVAL.run_metrics("hook_control", {"status": "complete", "commands": [command("python3 tools/run_cache_tests.py", 137, "OOM_KILLED")]}, True)
         self.assertEqual((quiet["unwanted_memory_effect"], quiet["completed_correctly"]), (False, True))
         self.assertTrue(noisy["unwanted_memory_effect"])
+        self.assertEqual((hooked["unwanted_memory_effect"], hooked["completed_correctly"], hooked["hook_injected"]), (True, False, True))
 
     def test_verdict_never_claims_causality_and_ignores_incomplete_runs(self):
         def row(**extra):
             base = {"run_status": "complete", "completed_correctly": True, "repeated_mistake_ran_without_lesson": False, "attempts_at_suite": 1, "tool_calls": 3,
-                    "recall_invoked": False, "inspect_invoked": False, "lesson_applied": False, "unwanted_memory_effect": False, "usage": {"input_tokens": 10, "output_tokens": 5}, "elapsed_seconds": 2.0}
+                    "recall_invoked": False, "inspect_invoked": False, "lesson_applied": False, "hook_injected": False, "unwanted_memory_effect": False, "usage": {"input_tokens": 10, "output_tokens": 5}, "elapsed_seconds": 2.0}
             base.update(extra)
             return base
         per_run = {"baseline": [row(repeated_mistake_ran_without_lesson=True, attempts_at_suite=2), row(run_status="unverified")],
-                   "treatment": [row(recall_invoked=True, lesson_applied=True)], "control": [row()]}
+                   "treatment": [row(recall_invoked=True, lesson_applied=True)], "hook": [row(hook_injected=True, lesson_applied=True)],
+                   "control": [row()], "hook_control": [row(unwanted_memory_effect=True)]}
         summary = EVAL.summarize(per_run)
         self.assertEqual(summary["baseline"]["complete_runs"], 1)
         verdict = EVAL.verdict(summary, 1)
         self.assertTrue(verdict["treatment_better_than_baseline"])
+        self.assertEqual((verdict["hook_better_than_treatment"], verdict["control_clean"], verdict["hook_control_clean"]), (False, True, False))
+        self.assertEqual(summary["hook"]["hook_injected"], 1)
         self.assertEqual(verdict["evidence_level"], "smoke validation")
         self.assertIn("no causal", verdict["claim"])
-        self.assertEqual(EVAL.verdict(EVAL.summarize({"baseline": [], "treatment": [], "control": []}), 1)["status"], "incomplete")
+        self.assertEqual(EVAL.verdict(EVAL.summarize({arm: [] for arm in EVAL.ARMS}), 1)["status"], "incomplete")
 
 
 if __name__ == "__main__":
