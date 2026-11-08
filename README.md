@@ -36,7 +36,7 @@ An empty list means the query abstained: no candidate cleared the relevance gate
 
 Records that supersede or contradict each other are linked, never overwritten. When both sides of an unresolved contradiction are retrieved, both are returned as leads with `conflict_unresolved`. A superseded record is not returned.
 
-Sessions written in the last two minutes are excluded from event leads so the current session does not retrieve itself. Event leads exclude other projects and other worktrees' unrelated repositories; a project is identified by its Git common directory, so worktrees of one repository share evidence while source conditions are checked in the worktree you pass.
+Sessions written in the last two minutes are excluded from event leads so the current session does not retrieve itself. Event leads exclude other projects and other worktrees' unrelated repositories; a project is identified by its Git common directory, so worktrees of one repository share evidence while source conditions are checked in the worktree you pass. A session whose directory lived under `<repo>/.work/wt/<name>` and was later removed is filed under that repository's common directory rather than under a missing path.
 
 ## Capture experience locally
 

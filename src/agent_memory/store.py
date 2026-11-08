@@ -21,7 +21,7 @@ from agent_memory.transcripts import opencode_database, opencode_events, opencod
 from agent_memory.types import DATABASE_HARNESSES, HARNESSES, OPENCODE_DB, OPENCODE_SUBPOSITIONS, SUBSTANTIVE_KINDS, Harness
 
 DB_FILENAME = "sessions.sqlite3"
-SCHEMA_VERSION = 12
+SCHEMA_VERSION = 13
 ARCHIVE_DIRNAME = "archive"
 ARCHIVE_OBJECTS = "objects"
 ARCHIVE_COMPANIONS = {"grok": ("summary.json", "events.jsonl")}
@@ -151,15 +151,33 @@ def _run_git(path, *args, stats=None):
     return result.stdout.strip()
 
 
-def project_identity(path, stats=None):
-    candidate = Path(path).expanduser().resolve()
+def _git_identity(candidate, stats=None):
     common_dir = _run_git(candidate, "rev-parse", "--path-format=absolute", "--git-common-dir", stats=stats)
     if not common_dir:
         common_dir = _run_git(candidate, "rev-parse", "--git-common-dir", stats=stats)
         if common_dir and not Path(common_dir).is_absolute():
             common_dir = str(candidate / common_dir)
-    if common_dir:
-        return "git:" + str(Path(common_dir).resolve())
+    return "git:" + str(Path(common_dir).resolve()) if common_dir else None
+
+
+def _removed_worktree_identity(candidate, stats=None):
+    if candidate.exists():
+        return None
+    parts = candidate.parts
+    index = next((i for i in range(len(parts) - 3, -1, -1) if parts[i] == ".work" and parts[i + 1] == "wt"), None)
+    if index is None:
+        return None
+    return _git_identity(Path(*parts[:index]), stats=stats)
+
+
+def project_identity(path, stats=None):
+    candidate = Path(path).expanduser().resolve()
+    identity = _git_identity(candidate, stats=stats)
+    if identity is not None:
+        return identity
+    identity = _removed_worktree_identity(candidate, stats=stats)
+    if identity is not None:
+        return identity
     return "path:" + str(candidate)
 
 
@@ -423,7 +441,7 @@ class Store:
             existing = {row[0] for row in self.db.execute("SELECT name FROM sqlite_master WHERE type='table'")}
             if version == 0 and existing & owned:
                 raise StoreError("session index has an unversioned schema; run `agent-sessions doctor --rebuild-index` to rebuild only index tables")
-            if version not in (0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, SCHEMA_VERSION):
+            if version not in (0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, SCHEMA_VERSION):
                 raise StoreError("unsupported session index schema version " + str(version))
             if version == 1:
                 if not self._schema_ready(1):
@@ -480,6 +498,11 @@ class Store:
                     raise StoreError("session index schema is incomplete; run `agent-sessions doctor --rebuild-index` to rebuild only index tables")
                 self._migrate_v11()
                 version = 12
+            if version == 12:
+                if not self._schema_ready(12):
+                    raise StoreError("session index schema is incomplete; run `agent-sessions doctor --rebuild-index` to rebuild only index tables")
+                self._migrate_v12()
+                version = 13
             if version == SCHEMA_VERSION:
                 if not self._schema_ready(SCHEMA_VERSION):
                     raise StoreError("session index schema is incomplete; run `agent-sessions doctor --rebuild-index` to rebuild only index tables")
@@ -752,6 +775,22 @@ class Store:
                 "DROP INDEX IF EXISTS events_session_position;"
                 "PRAGMA user_version = 12;COMMIT;"
             )
+        except sqlite3.DatabaseError:
+            self.db.rollback()
+            raise
+
+    def _migrate_v12(self):
+        remapped = {}
+        for (project,) in self.db.execute("SELECT DISTINCT project FROM sessions WHERE project LIKE 'path:%'"):
+            identity = _removed_worktree_identity(Path(project[len("path:"):]))
+            if identity is not None:
+                remapped[project] = identity
+        try:
+            self.db.execute("BEGIN IMMEDIATE")
+            for project, identity in remapped.items():
+                self.db.execute("UPDATE sessions SET project = ? WHERE project = ?", (identity, project))
+            self.db.execute("PRAGMA user_version = 13")
+            self.db.execute("COMMIT")
         except sqlite3.DatabaseError:
             self.db.rollback()
             raise
