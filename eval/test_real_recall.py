@@ -31,6 +31,9 @@ BACK_REFERENCE = "we tried the ingest tests before with ModuleNotFoundError orbi
 LATER_TURN = "now rename the parser helper function so the name says what it returns"
 MID_SESSION_TURN = "the parser helper now sits beside the schema loader"
 UNRELATED = "zitrone quibble TIDEPOOLQUERYTOKEN"
+SUBAGENT_BACK_REFERENCE = "we tried the delegated worker before, remember the subagent brief?"
+REPEATED_BACK_REFERENCE = "we tried the repeated template before, remember the repeated template?"
+PAIRED_BACK_REFERENCE = "we tried the paired template before, remember the paired template?"
 ANSWER_AGE_DAYS = 20
 FILLER_AGE_DAYS = 30
 OPENING_AGE_DAYS = 10
@@ -60,6 +63,30 @@ def fixture_spec():
             episode("a-3", [
                 {"user": LATER_TURN},
                 {"assistant": "Renamed it."},
+            ], OPENING_AGE_DAYS),
+            dict(episode("a-sub", [
+                {"user": SUBAGENT_BACK_REFERENCE},
+                {"assistant": "delegated"},
+            ], OPENING_AGE_DAYS), subagent_of="a-2"),
+            episode("a-r1", [
+                {"user": REPEATED_BACK_REFERENCE},
+                {"assistant": "templated"},
+            ], OPENING_AGE_DAYS),
+            episode("a-r2", [
+                {"user": REPEATED_BACK_REFERENCE.replace(" the", "  the")},
+                {"assistant": "templated"},
+            ], OPENING_AGE_DAYS),
+            episode("a-r3", [
+                {"user": REPEATED_BACK_REFERENCE},
+                {"assistant": "templated"},
+            ], OPENING_AGE_DAYS),
+            episode("a-p1", [
+                {"user": PAIRED_BACK_REFERENCE},
+                {"assistant": "paired"},
+            ], OPENING_AGE_DAYS),
+            episode("a-p2", [
+                {"user": PAIRED_BACK_REFERENCE},
+                {"assistant": "paired"},
             ], OPENING_AGE_DAYS),
         ],
         "memories": [],
@@ -153,6 +180,19 @@ class CandidateTests(Sandbox):
         self.assertEqual(stat.S_IMODE(out.stat().st_mode), 0o600)
         self.assertNotIn("ingest", output)
         self.assertNotIn("orbit_core", output)
+
+    def test_subagent_session_prompt_is_not_proposed(self):
+        out, output = self.proposals()
+        queries = [json.loads(line)["query"] for line in out.read_text().splitlines()]
+        self.assertNotIn(SUBAGENT_BACK_REFERENCE, queries)
+        self.assertIn("filtered_non_user=1", output)
+
+    def test_prompt_repeated_in_three_sessions_is_dropped_while_two_sessions_is_kept(self):
+        out, output = self.proposals()
+        queries = [json.loads(line)["query"] for line in out.read_text().splitlines()]
+        self.assertFalse(any("repeated" in query for query in queries), queries)
+        self.assertTrue(any("paired" in query for query in queries), queries)
+        self.assertIn("filtered_repeated=3", output)
 
 
 class ValidateTests(Sandbox):

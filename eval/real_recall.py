@@ -29,6 +29,7 @@ QUERY_CHARS = 400
 SEED = 13
 ABSTENTION_SAMPLE = 40
 DEFAULT_LIMIT = 200
+REPEATED_PROMPT_SESSIONS = 3
 VALID_EXPECTATIONS = ("match", "abstain")
 
 
@@ -97,11 +98,19 @@ def _prompt_rows(database):
     replay = _replay()
     rows = database.execute(
         "SELECT e.session AS session, e.position AS position, e.text AS text, e.timestamp AS timestamp, "
-        "s.project AS project FROM events e JOIN sessions s ON s.id = e.session "
+        "s.project AS project, s.parent AS parent, s.thread_source AS thread_source "
+        "FROM events e JOIN sessions s ON s.id = e.session "
         "WHERE e.kind = 'user' AND e.text != '' AND s.project IS NOT NULL "
         "ORDER BY s.updated, e.session, e.position").fetchall()
     back, ordinary, opened = [], [], set()
+    sessions_by_text = {}
+    dropped_non_user = 0
     for row in rows:
+        key = " ".join(row["text"].split())
+        sessions_by_text.setdefault(key, set()).add(row["session"])
+        if row["parent"] is not None or row["thread_source"] not in ("user", None):
+            dropped_non_user += 1
+            continue
         text = _prompt_text(row["text"])
         stamp = replay.epoch(row["timestamp"])
         if text is None or stamp is None:
@@ -109,10 +118,18 @@ def _prompt_rows(database):
         opening = row["session"] not in opened
         opened.add(row["session"])
         if BACK_REFERENCE.search(text):
-            back.append((row, text, stamp))
+            back.append((row, text, stamp, key))
         elif opening:
-            ordinary.append((row, text, stamp))
-    return back, ordinary
+            ordinary.append((row, text, stamp, key))
+    dropped_repeated = 0
+    kept_back, kept_ordinary = [], []
+    for source, target in ((back, kept_back), (ordinary, kept_ordinary)):
+        for row, text, stamp, key in source:
+            if len(sessions_by_text[key]) >= REPEATED_PROMPT_SESSIONS:
+                dropped_repeated += 1
+            else:
+                target.append((row, text, stamp))
+    return kept_back, kept_ordinary, dropped_non_user, dropped_repeated
 
 
 def _candidate(row, text, stamp):
@@ -126,7 +143,7 @@ def _candidate(row, text, stamp):
 def candidates(state_dir, out, limit):
     database = _read_index(state_dir)
     try:
-        back, ordinary = _prompt_rows(database)
+        back, ordinary, dropped_non_user, dropped_repeated = _prompt_rows(database)
     finally:
         database.close()
     budget = max(0, int(limit))
@@ -136,8 +153,8 @@ def candidates(state_dir, out, limit):
     with _private_output(out) as stream:
         for row, text, stamp in chosen + sampled:
             stream.write(json.dumps(_candidate(row, text, stamp), ensure_ascii=False) + "\n")
-    print("candidates: back_reference=%d abstain_sample=%d written=%d"
-          % (len(chosen), len(sampled), len(chosen) + len(sampled)))
+    print("candidates: back_reference=%d abstain_sample=%d written=%d filtered_non_user=%d filtered_repeated=%d"
+          % (len(chosen), len(sampled), len(chosen) + len(sampled), dropped_non_user, dropped_repeated))
     return 0
 
 
